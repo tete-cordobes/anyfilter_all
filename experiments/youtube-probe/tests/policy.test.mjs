@@ -109,13 +109,41 @@ test('an initially unavailable skip button is used when it appears', async () =>
   assert.deepEqual(h.actions, ['click-skip']);
 });
 
-test('refused clicks are attempted once and never reported as successful skips', async () => {
+test('refused clicks get one bounded retry and are never reported as successful skips', async () => {
   const h = harness(); h.controller.tick(settings); await flush();
-  h.controller.tick(settings); h.time = 3000;
+  h.controller.tick(settings);
   for (let i = 0; i < 10; i += 1) h.controller.tick(settings);
   assert.deepEqual(h.actions, ['click-skip']);
+  h.time = 1000; h.controller.tick(settings); h.time = 4000;
+  for (let i = 0; i < 10; i += 1) h.controller.tick(settings);
+  assert.deepEqual(h.actions, ['click-skip', 'click-skip']);
   assert.equal(h.reports.filter((r) => r.outcome === 'ad-still-playing-after-attempt').length, 1);
   assert(!h.reports.some((r) => r.outcome === 'ad-ended-after-attempt'));
+});
+
+test('a skip that disappears during revalidation does not exhaust the click allowance', async () => {
+  let attempts = 0;
+  const h = harness();
+  h.controller.execute = () => { attempts += 1; return attempts > 1; };
+  h.controller.tick(settings); await flush(); h.controller.tick(settings);
+  h.time = 1000; h.controller.tick(settings);
+  assert.equal(attempts, 2);
+  assert(h.reports.some((r) => r.outcome === 'action-attempted'));
+});
+
+test('a late skip button takes over 16x while cleanup remains until the ad ends', async () => {
+  let restored = 0; const actions = [];
+  const h = harness(); h.live.skipAvailable = false;
+  h.controller.execute = (action) => { actions.push(action); return action === 'speed-16x'
+    ? { restore: () => { restored += 1; } } : true; };
+  const accelerated = { ...settings, accelerateAds: true };
+  h.controller.tick(accelerated); await flush(); h.controller.tick(accelerated);
+  h.live.skipAvailable = true; h.controller.tick(accelerated);
+  assert.deepEqual(actions, ['speed-16x', 'click-skip']);
+  assert.equal(restored, 0, 'keep acceleration while checking the click outcome');
+  h.live = { ...h.live, state: { ...h.live.state, adShowing: false } };
+  h.controller.tick(accelerated);
+  assert.equal(restored, 1);
 });
 
 test('ad transition is reported separately from the attempted action', async () => {

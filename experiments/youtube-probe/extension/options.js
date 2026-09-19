@@ -97,6 +97,16 @@ async function refresh() {
       (connected.length < health.tabs.length ? ' Pulsa «Conectar pestañas de YouTube» o recarga las que falten.' : '') +
       (unsupported ? ' Hay páginas no compatibles; prueba Inicio, búsqueda o un vídeo normal, fuera del reproductor vertical de Shorts.' : '') +
       (noCards ? ' Aún no se detectan tarjetas compatibles en la página.' : '');
+    const ads = connected.filter((tab) => tab.adShowing);
+    const skipStates = { ready: 'botón Saltar disponible', disabled: 'botón Saltar aún deshabilitado',
+      countdown: 'cuenta atrás para Saltar', hidden: 'botón Saltar oculto', missing: 'no se encuentra un botón Saltar' };
+    const lastPlayer = [...events].reverse().find((e) => e.surface === 'player' &&
+      ['action-attempted', 'action-aborted', 'action-error', 'ad-still-playing-after-attempt', 'ad-ended-after-attempt'].includes(e.outcome));
+    $('health-player').textContent = (ads.length ? ads.map((tab) => 'Anuncio detectado: ' + (skipStates[tab.skipState] ?? 'comprobando botón Saltar')).join('. ') :
+      connected.some((tab) => tab.player) ? 'No hay un anuncio detectado en el reproductor ahora.' : '') +
+      (lastPlayer?.action === 'click-skip' ? lastPlayer.outcome === 'ad-still-playing-after-attempt'
+        ? ' Se intentó Saltar, pero el anuncio seguía reproduciéndose.'
+        : lastPlayer.outcome === 'action-attempted' ? ` Último clic en Saltar: intento ${lastPlayer.clickAttempt ?? 1}.` : '' : '');
     const evaluations = events.filter((e) => ['evaluated', 'kept', 'hidden', 'would-hide'].includes(e.outcome)).length;
     const hidden = events.filter((e) => e.outcome === 'hidden').length;
     const attempts = events.filter((e) => e.outcome === 'action-attempted').length;

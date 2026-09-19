@@ -25,8 +25,8 @@ const options = (sender) => sender.url === chrome.runtime.getURL('options.html')
 function saveReport(event, tabId) {
   const entry = { at: new Date().toISOString(), tabId, surface: event.surface,
     outcome: String(event.outcome ?? '').slice(0, 80) };
-  for (const key of ['action', 'error']) if (typeof event[key] === 'string') entry[key] = event[key].slice(0, 80);
-  for (const key of ['status', 'episode', 'latencyMs', 'elapsedMs', 'previousRate', 'requestedRate', 'observedRate']) if (Number.isFinite(event[key])) entry[key] = event[key];
+  for (const key of ['action', 'error', 'skipState']) if (typeof event[key] === 'string') entry[key] = event[key].slice(0, 80);
+  for (const key of ['clickAttempt', 'status', 'episode', 'latencyMs', 'elapsedMs', 'previousRate', 'requestedRate', 'observedRate']) if (Number.isFinite(event[key])) entry[key] = event[key];
   if (event.scores && ['advertisement', 'filter'].every((k) => Number.isFinite(event.scores[k]))) entry.scores = event.scores;
   reportChain = reportChain.then(async () => {
     const { events = [] } = await chrome.storage.session.get('events');
@@ -87,7 +87,8 @@ async function pageStatus(tab, connect) {
     }
     return { tabId: tab.id, connected: state?.ok === true,
       ...(state?.ok ? { enabled: state.enabled, mode: state.mode, supported: state.supported,
-        cards: state.cards, player: state.player, adShowing: state.adShowing, adUiVisible: state.adUiVisible } : {}) };
+        cards: state.cards, player: state.player, adShowing: state.adShowing, adUiVisible: state.adUiVisible,
+        skipAvailable: state.skipAvailable, skipState: state.skipState, skipCandidates: state.skipCandidates } : {}) };
   } catch { return { tabId: tab.id, connected: false }; }
 }
 

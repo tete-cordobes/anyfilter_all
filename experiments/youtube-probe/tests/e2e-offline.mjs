@@ -146,7 +146,7 @@ try {
   await page.evaluate(() => { fixture.rejectClick = true; fixture.startAd('skip', 'Reject click ad'); });
   await waitEvent('ad-still-playing-after-attempt', offset);
   check('refused skip is not counted as an ended ad', !(await events()).slice(offset).some((e) => e.outcome === 'ad-ended-after-attempt'));
-  check('refused skip is not hammered repeatedly', await page.evaluate(() => fixture.clicks === 2));
+  check('refused skip is limited to two spaced clicks', await page.evaluate(() => fixture.clicks === 3));
   await page.evaluate(() => { fixture.endAd(); fixture.rejectClick = false; });
   await page.waitForTimeout(400);
 
@@ -220,6 +220,65 @@ try {
   await page.evaluate(() => fixture.startAd('skip', 'Vercel contract ad'));
   await waitEvent('ad-ended-after-attempt', offset);
   check('Vercel boolean response contract also drives a simulated skip', await page.evaluate(() => fixture.clicks) === clicksBefore + 1);
+  await configure({ accelerateAds: true, seekAds: false });
+  for (const kind of ['pointer-events', 'aria-parent', 'countdown', 'fieldset']) {
+    const before = await page.evaluate(() => fixture.clicks);
+    await page.evaluate(async (kind) => {
+      await fixture.startAd('skip', 'Late skip ' + kind, 8);
+      const button = document.querySelector('.ytp-skip-ad-button');
+      if (kind === 'pointer-events') button.style.pointerEvents = 'none';
+      if (kind === 'countdown') { button.setAttribute('aria-label', 'Saltar anuncios'); button.textContent = 'Saltar anuncio en 5 segundos'; }
+      if (kind === 'aria-parent' || kind === 'fieldset') {
+        const wrapper = document.createElement(kind === 'fieldset' ? 'fieldset' : 'div'); wrapper.id = 'skip-wrapper';
+        if (kind === 'fieldset') wrapper.disabled = true; else wrapper.setAttribute('aria-disabled', 'true');
+        button.replaceWith(wrapper); wrapper.append(button);
+      }
+    }, kind);
+    await page.waitForFunction(() => document.querySelector('video').playbackRate === 16);
+    check(kind + ': wait and accelerate while skip is not ready', await page.evaluate(() => fixture.clicks) === before);
+    const health = await options.evaluate(() => chrome.runtime.sendMessage({ type: 'probe-diagnostics' }));
+    check(kind + ': skip readiness is visible in diagnostics', health.tabs.some((tab) => tab.skipState === (kind === 'countdown' ? 'countdown' : 'disabled')));
+    await page.evaluate(() => {
+      const button = document.querySelector('.ytp-skip-ad-button');
+      button.style.pointerEvents = ''; button.textContent = 'Saltar anuncios'; button.removeAttribute('aria-label');
+      document.querySelector('#skip-wrapper')?.replaceWith(button);
+    });
+    await page.waitForFunction((before) => fixture.clicks === before + 1 && fixture.source === 'content', before);
+    check(kind + ': late skip is clicked after 16x using the same Jev verdict', calls.filter((c) => c.state.title === 'Late skip ' + kind).length === 1);
+    await page.waitForFunction(() => document.querySelector('video').playbackRate === 1.25);
+  }
+
+  await page.evaluate(() => {
+    fixture.otherClicks = 0;
+    const outside = document.createElement('button'); outside.id = 'outside-skip'; outside.textContent = 'Saltar anuncios';
+    outside.onclick = () => { fixture.otherClicks += 1; }; document.body.append(outside);
+    const advertiser = document.createElement('button'); advertiser.textContent = 'Visitar anunciante';
+    advertiser.onclick = () => { fixture.otherClicks += 1; }; document.querySelector('#movie_player').append(advertiser);
+  });
+  for (const label of ['Omitir anuncios', 'Skip ad']) {
+    const before = await page.evaluate(() => fixture.clicks);
+    await page.evaluate(async (label) => {
+      await fixture.startAd('no-skip', 'Accessible late skip ' + label, 8);
+    }, label);
+    await page.waitForFunction(() => document.querySelector('video').playbackRate === 16);
+    await page.evaluate((label) => {
+      const button = document.createElement('button'); button.id = 'semantic-skip'; button.className = 'new-player-button';
+      button.setAttribute('aria-label', label); button.textContent = '›';
+      button.onclick = () => { fixture.clicks += 1; fixture.endAd(); };
+      document.querySelector('#movie_player').append(button);
+    }, label);
+    await page.waitForFunction((before) => fixture.clicks === before + 1 && fixture.source === 'content', before);
+    check(label + ': skip button is found by its accessible name when CSS classes differ', await page.evaluate(() => fixture.otherClicks === 0));
+    await page.evaluate(() => document.querySelector('#semantic-skip').remove());
+    await page.waitForFunction(() => document.querySelector('video').playbackRate === 1.25);
+  }
+
+  const beforeRetry = await page.evaluate(() => fixture.clicks);
+  await page.evaluate(async () => { fixture.rejectClick = true; await fixture.startAd('skip', 'Skip listener becomes ready', 8); });
+  await page.waitForFunction((before) => fixture.clicks === before + 1, beforeRetry);
+  await page.evaluate(() => { fixture.rejectClick = false; });
+  await page.waitForFunction((before) => fixture.clicks === before + 2 && fixture.source === 'content', beforeRetry);
+  check('one delayed retry recovers when the first visible skip click is ignored', await page.evaluate(() => fixture.clicks) === beforeRetry + 2);
   await configure({ enabled: false });
   check('exportable events contain no key or page text', !JSON.stringify(await events()).includes('offline-fixture-key-not-real') && !JSON.stringify(await events()).includes('Buy Example Shoes'));
   check('no uncaught content errors', errors.length === 0);

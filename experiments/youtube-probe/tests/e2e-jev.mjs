@@ -73,6 +73,18 @@ try {
   await page.waitForFunction(() => fixture.clicks === 1 && fixture.source === 'content');
   check('real Jev verdict triggers the fixture skip button', await page.evaluate(() => fixture.clicks === 1));
   await page.waitForFunction(() => document.querySelector('video').readyState >= 3 && document.querySelector('video').currentTime === 3);
+
+  await page.evaluate(() => fixture.startAd('no-skip', 'Buy Example Shoes — available now', 8));
+  await page.waitForFunction(() => document.querySelector('video').playbackRate === 16);
+  await page.evaluate(() => { fixture.rejectClick = true; document.querySelector('.ytp-skip-ad-button').hidden = false; });
+  await page.waitForFunction(() => fixture.clicks === 2);
+  check('real Jev authorizes a late skip without dropping 16x after an ignored click', await page.evaluate(() =>
+    fixture.source === 'ad' && document.querySelector('video').playbackRate === 16));
+  await page.evaluate(() => { fixture.rejectClick = false; });
+  await page.waitForFunction(() => fixture.clicks === 3 && fixture.source === 'content');
+  await page.waitForFunction(() => document.querySelector('video').readyState >= 3 && document.querySelector('video').currentTime === 3);
+  check('one retry completes the late skip and restores original playback speed', await page.evaluate(() => document.querySelector('video').playbackRate === 1.25));
+
   const accelerated = await page.evaluate(() => Promise.race([
     fixture.measurePlayback('Buy Example Shoes — 50% off', 8),
     new Promise((_, reject) => setTimeout(() => {
@@ -91,7 +103,7 @@ try {
   }));
   report.observed = await worker.evaluate(async () => (await chrome.storage.session.get('events')).events ?? []);
   check('reports contain no API key', !JSON.stringify(report).includes(key));
-  check('all provider calls were real and no evaluation errors occurred', providerCalls >= 6 && !report.observed.some((e) => e.outcome === 'evaluation-error'));
+  check('all provider calls were real and no evaluation errors occurred', providerCalls >= 7 && !report.observed.some((e) => e.outcome === 'evaluation-error'));
   console.log('CONTROLLED MEDIA, REAL JEV ' + JSON.stringify(playbackTiming));
   completed = true;
 } finally {

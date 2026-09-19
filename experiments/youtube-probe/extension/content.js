@@ -91,6 +91,8 @@ export async function start() {
       respond({ ok: true, enabled: settings.enabled, mode: settings.mode,
         supported: filteredPage(), cards: cardNodes().length,
         player: !!snapshot, adShowing: snapshot?.state.adShowing === true,
+        skipAvailable: snapshot?.skipAvailable === true, skipState: snapshot?.skipState ?? 'missing',
+        skipCandidates: snapshot?.skipCandidates ?? 0,
         adUiVisible: snapshot?.state.adUiVisible === true });
     } else if (message?.type === 'probe-settings') {
       settings = message.settings;

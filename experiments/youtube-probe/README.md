@@ -8,13 +8,17 @@ The content script reads visible card metadata or player-ad UI evidence. The bac
 
 Player mechanisms, in order:
 
-1. Click a visible, enabled skip button.
+1. Click a visible, enabled skip button. If the ad remains, allow one retry at least 800 ms later (two clicks maximum per episode), checking the ad and button again before each click.
 2. If enabled, try 16× playback for a finite ad segment, preserving the previous speed.
 3. If acceleration is disabled and seeking is enabled, try seeking to the end of a finite, seekable ad segment.
 
 Acceleration and seeking are off before activation. **Comprobar Jev y activar filtro** explicitly enables acceleration after checking Jev; seeking remains an independent advanced setting. The maximum segment duration for those experiments is 180 seconds. A model verdict alone never authorizes modifying ordinary playback. The probe never mutes audio or changes volume. Acceleration is removed when the ad ends, the media changes, the experiment is disabled, navigation invalidates the decision, or the ad remains beyond its expected accelerated duration plus a grace period. A subsequent speed change by the user or player is respected, not repeatedly overwritten.
 
 The player probe runs on desktop `/watch` pages. Card scanning covers desktop Home, search, watch recommendations and feeds. The vertical Shorts player, creator-read sponsorships, mobile YouTube and network-level ad blocking are outside this experiment.
+
+Version 0.1.2 distinguishes a ready skip control from a hidden/disabled/countdown control. It recognizes the known player selectors and exact English/Spanish accessible button names inside the player. A button becoming ready during acceleration is used with the existing Jev verdict. Acceleration cleanup remains attached until the ad ends or its deadline expires, even if the first skip click is ignored. A pre-click revalidation abort does not exhaust the click allowance.
+
+If no skip button appears, there is no control to click. In the activated configuration, the intended action is then 16× until the ad ends. Missing skip UI does not mean the ad went undetected. Check whether the main video starts sooner, or whether a countdown/wait remains despite faster playback; the latter outcome is not established by the controlled tests. YouTube supports both [skippable and non-skippable ad formats](https://support.google.com/youtube/answer/2467968).
 
 ## Install for a manual real-site test
 
@@ -25,7 +29,7 @@ The player probe runs on desktop `/watch` pages. Card scanning covers desktop Ho
 5. Existing YouTube tabs are connected without reloading. The status panel shows connected tabs, active/observation/disabled state, unsupported pages, recent activity and provider errors. **Conectar pestañas de YouTube** can retry a disconnected tab. Open YouTube in the same Chrome profile.
 6. **Ajustes del filtro** contains the custom rule, observation-only mode, individual controls and experimental seeking. Save there to apply those choices. Test a normal video, a skippable ad and a non-skippable ad; export observations from the options page.
 
-When updating an already loaded unpacked extension to 0.1.1, click its reload button in `chrome://extensions`, reload YouTube once to discard the old content script, then reopen the options. Existing saved credentials are preserved. The new `scripting` permission is used only to connect already-open `www.youtube.com` tabs; provider evaluation still uses Jev, with no ChatGPT dependency.
+When updating an already loaded unpacked extension to 0.1.2, click its reload button in `chrome://extensions`, reload YouTube once to discard the old content script, then reopen the options. Existing saved credentials are preserved. The `scripting` permission is used only to connect already-open `www.youtube.com` tabs; provider evaluation still uses Jev, with no ChatGPT dependency. The status panel now reports whether a detected ad has a ready, hidden, disabled, countdown or missing skip control, and records click attempt numbers without exporting page text.
 
 The API key is stored in this experiment's trusted extension storage and sent only to the selected provider for authentication. Title, channel and advertising label are sent for evaluation; player requests also include two ad-UI flags. Feed cards do not send unrelated player flags. No audio, images, video stream, cookies or account tokens are sent. Reports contain probabilities, timings and action outcomes, not the API key or page text. Session reports are bounded to 200 events and disappear when the browser closes.
 
@@ -79,6 +83,8 @@ pnpm e2e:youtube:jev
 | `ad-still-playing-after-attempt` | The ad remained after the observation deadline. |
 | `speed-not-maintained` | The requested 16× value was changed or rejected. |
 | `no-action-available` | Detected ad, but no enabled and eligible action. |
+| `skip-control` | The skip control changed readiness state; a countdown is not a clickable skip. |
+| `acceleration-window-ended` | The acceleration deadline expired and its cleanup was invoked. |
 | `episode-abandoned` | Page/player disappeared; not an observed successful removal. |
 
 Generated evidence is saved to ignored `reports/youtube-probe-offline.json`, `reports/youtube-probe-jev.json` and an options screenshot. Real-site success still requires watching that the advertisement ends sooner and that the main video resumes at the correct position and speed, across multiple ad types. DOM variations, player enforcement and server timing may reject an otherwise valid local action.

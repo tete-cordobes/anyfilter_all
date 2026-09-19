@@ -2,6 +2,8 @@ const CARD = 'ytd-rich-item-renderer,ytd-video-renderer,ytd-compact-video-render
 const SKIP = '.ytp-skip-ad-button,.ytp-ad-skip-button,.ytp-ad-skip-button-modern';
 const AD_UI = '.ytp-ad-text,.ytp-ad-simple-ad-badge,.ytp-ad-badge,.ytp-ad-preview-container,.ytp-ad-player-overlay-instream-info';
 const text = (node) => (node?.textContent ?? '').trim().slice(0, 1500);
+const readySkipLabel = /^(?:skip(?:\s+ads?)?|saltar(?:\s+(?:anuncios?|publicidad))?|omitir(?:\s+(?:anuncios?|publicidad))?)(?:\s*[»›>→])?$/i;
+const controlLabel = (node) => (node.getAttribute('aria-label') || node.innerText || node.textContent || '').trim().replace(/\s+/g, ' ');
 
 export function visible(node) {
   if (!node?.isConnected || node.closest('[hidden],[aria-hidden="true"]')) return false;
@@ -14,9 +16,25 @@ export function visible(node) {
   return true;
 }
 
+export function readSkipControl(player) {
+  const candidates = [...new Set([...player.querySelectorAll(SKIP + ',button,[role="button"]')]
+    .filter((node) => node.matches(SKIP) || readySkipLabel.test(controlLabel(node)))
+    .map((node) => node.matches('button,[role="button"]') ? node : node.querySelector('button,[role="button"]') || node))];
+  let state = candidates.length ? 'hidden' : 'missing';
+  for (const node of candidates) {
+    if (!visible(node)) continue;
+    if (node.matches(':disabled') || node.closest('[aria-disabled="true"],[inert]') || getComputedStyle(node).pointerEvents === 'none') {
+      state = 'disabled'; continue;
+    }
+    const countdownText = controlLabel(node) + ' ' + (node.innerText ?? node.textContent ?? '');
+    if (/\b\d+\b|\bseconds?\b|\bsegundos?\b/i.test(countdownText)) { state = 'countdown'; continue; }
+    return { button: node, state: 'ready', candidates: candidates.length };
+  }
+  return { button: null, state, candidates: candidates.length };
+}
+
 export function skipButton(player) {
-  return [...player.querySelectorAll(SKIP)].find((node) => visible(node) &&
-    !node.disabled && node.getAttribute('aria-disabled') !== 'true') ?? null;
+  return readSkipControl(player).button;
 }
 
 export function readPlayer() {
@@ -24,17 +42,18 @@ export function readPlayer() {
   if (!player || !visible(player)) return null;
   const media = player.querySelector('video.html5-main-video,video');
   const badge = [...player.querySelectorAll(AD_UI)].find(visible);
-  const skip = skipButton(player);
+  const skip = readSkipControl(player);
   const adShowing = player.classList.contains('ad-showing') || player.classList.contains('ad-interrupting');
   const title = text(player.querySelector('.ytp-ad-title,.ytp-ad-text-overlay'));
   const channel = text(player.querySelector('.ytp-ad-visit-advertiser-button,.ytp-ad-button-text'));
   const mediaSource = media?.currentSrc ?? '';
   const duration = media?.duration ?? NaN;
-  const state = { surface: 'player', title, channel, sponsorLabel: text(badge), adShowing, adUiVisible: !!badge || !!skip };
+  const state = { surface: 'player', title, channel, sponsorLabel: text(badge), adShowing, adUiVisible: !!badge || !!skip.button };
   const identity = JSON.stringify([location.href, mediaSource, Number.isFinite(duration) ? duration : null, title, channel]);
   return { player, media, state, identity, pageUrl: location.href, mediaSource, duration,
     playbackRate: media?.playbackRate, mediaTime: media?.currentTime ?? 0,
-    skipAvailable: !!skip, seekable: !!media?.seekable?.length && media.seekable.end(media.seekable.length - 1) >= duration - 0.25 };
+    skipAvailable: !!skip.button, skipState: skip.state, skipCandidates: skip.candidates,
+    seekable: !!media?.seekable?.length && media.seekable.end(media.seekable.length - 1) >= duration - 0.25 };
 }
 
 export function executePlayerAction(action, expected) {

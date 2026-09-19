@@ -9,9 +9,17 @@ export class AdController {
   }
 
   reset() {
-    try { this.episode?.restore?.(); } catch { this.report({ surface: 'player', outcome: 'restore-error' }); }
+    this.stopAcceleration(this.episode);
     this.episode = null;
     this.serial += 1;
+  }
+
+  stopAcceleration(episode) {
+    if (!episode) return;
+    const restore = episode.restore;
+    episode.restore = null;
+    episode.accelerationDeadline = 0;
+    try { restore?.(); } catch { this.report({ surface: 'player', outcome: 'restore-error', episode: episode.serial }); }
   }
 
   tick(settings) {
@@ -30,7 +38,8 @@ export class AdController {
         this.episode.media !== snapshot.media) {
       this.reset();
       const episode = this.episode = { identity: snapshot.identity, player: snapshot.player, pageUrl: snapshot.pageUrl,
-        media: snapshot.media, serial: ++this.serial, result: null, pending: true, attempt: null, outcomes: new Set() };
+        media: snapshot.media, serial: ++this.serial, result: null, pending: true, attempt: null, outcomes: new Set(),
+        skipAttempts: 0, nextSkipAt: 0, accelerationDeadline: 0 };
       Promise.resolve().then(() => this.classify(snapshot.state)).then((result) => {
         if (this.episode !== episode) return;
         const fresh = this.read();
@@ -51,7 +60,21 @@ export class AdController {
       return;
     }
     const episode = this.episode;
+    const skipState = snapshot.skipState ?? (snapshot.skipAvailable ? 'ready' : 'missing');
+    if (episode.skipState !== skipState) {
+      episode.skipState = skipState;
+      this.report({ surface: 'player', outcome: 'skip-control', skipState, episode: episode.serial });
+    }
     if (episode.pending) return;
+    if (episode.accelerationDeadline && this.now() >= episode.accelerationDeadline) {
+      this.stopAcceleration(episode);
+      episode.outcomes.add('acceleration-window-ended');
+      this.report({ surface: 'player', outcome: 'acceleration-window-ended', episode: episode.serial });
+    }
+    if (episode.attempt && !episode.attempt.stillReported && this.now() - episode.attempt.at >= episode.attempt.waitMs) {
+      episode.attempt.stillReported = true;
+      this.report({ surface: 'player', outcome: 'ad-still-playing-after-attempt', action: episode.attempt.action, episode: episode.serial });
+    }
     const action = playerAction(snapshot, episode.result, settings);
     if (action === 'none') return;
     if (action === 'observe' || action === 'no-action-available') {
@@ -61,38 +84,37 @@ export class AdController {
       }
       return;
     }
-    // One attempt per mechanism/episode: do not hammer synthetic clicks on a refusing player.
-    if (episode.outcomes.has(action)) {
-      if (action === 'speed-16x' && snapshot.playbackRate !== 16 && !episode.outcomes.has('speed-not-maintained')) {
+    // The first click can race YouTube's button activation. One delayed retry is
+    // allowed, always with a fresh ad/button check, never more than two clicks.
+    if (action === 'click-skip' && (episode.skipAttempts >= 2 || this.now() < episode.nextSkipAt)) return;
+    if (action !== 'click-skip' && episode.outcomes.has(action)) {
+      if (action === 'speed-16x' && snapshot.playbackRate !== 16 && !episode.outcomes.has('speed-not-maintained') &&
+          !episode.outcomes.has('acceleration-window-ended')) {
         episode.outcomes.add('speed-not-maintained');
         this.report({ surface: 'player', outcome: 'speed-not-maintained', episode: episode.serial });
       }
-      const waitMs = action === 'speed-16x' ? episode.attempt?.waitMs ?? 2500 : 2500;
-      if (episode.attempt && this.now() - episode.attempt.at >= waitMs && !episode.outcomes.has('still-playing')) {
-        episode.outcomes.add('still-playing');
-        this.report({ surface: 'player', outcome: 'ad-still-playing-after-attempt', action, episode: episode.serial });
-        if (action === 'speed-16x') {
-          // Some media pipelines accept 16x but then stop advancing. Do not
-          // strand an ad at our requested speed after the experiment times out.
-          try { episode.restore?.(); }
-          catch { this.report({ surface: 'player', outcome: 'restore-error', episode: episode.serial }); }
-          finally { episode.restore = null; }
-        }
-      }
       return;
     }
-    episode.outcomes.add(action);
+    if (action === 'click-skip') episode.nextSkipAt = this.now() + 800;
+    else episode.outcomes.add(action);
     try {
-      episode.restore?.();
+      if (action !== 'click-skip') this.stopAcceleration(episode);
       const applied = this.execute(action, snapshot);
       if (applied) {
-        episode.restore = applied.restore;
+        if (action === 'click-skip') episode.skipAttempts += 1;
+        if (applied.restore) episode.restore = applied.restore;
         episode.attempt = { action, at: this.now(), waitMs: action === 'speed-16x'
           ? Math.max(2500, (snapshot.duration - snapshot.mediaTime) / 16 * 1000 + 2000) : 2500 };
+        if (action === 'speed-16x') episode.accelerationDeadline = this.now() + episode.attempt.waitMs;
         this.report({ surface: 'player', outcome: 'action-attempted', action, episode: episode.serial,
+          ...(action === 'click-skip' ? { clickAttempt: episode.skipAttempts } : {}),
           previousRate: applied.previousRate, requestedRate: applied.requestedRate, observedRate: applied.observedRate });
-      } else this.report({ surface: 'player', outcome: 'action-aborted', action, episode: episode.serial });
+      } else if (!episode.outcomes.has('aborted:' + action)) {
+        episode.outcomes.add('aborted:' + action);
+        this.report({ surface: 'player', outcome: 'action-aborted', action, episode: episode.serial });
+      }
     } catch {
+      if (action === 'click-skip') episode.skipAttempts += 1;
       this.report({ surface: 'player', outcome: 'action-error', action, episode: episode.serial });
     }
   }
