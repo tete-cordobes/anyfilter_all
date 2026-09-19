@@ -33,6 +33,8 @@ Version 0.1.3 reconnects already-open YouTube tabs when an enabled extension sta
 
 When updating an already loaded unpacked extension to 0.1.3, click its reload button in `chrome://extensions`, reload YouTube once to discard content scripts from older versions, then reopen the options. Check that they show **Versión 0.1.3** and that all YouTube tabs are connected. If the version remains 0.1.1/0.1.2, Chrome is still using an older loaded package; update the files in that package's directory. Reloading the same extension preserves its saved credentials. The `scripting` permission is used only to connect already-open `www.youtube.com` tabs; provider evaluation still uses Jev, with no ChatGPT dependency. The status panel reports whether a detected ad has a ready, hidden, disabled, countdown or missing skip control, and records click attempt numbers without exporting page text.
 
+During an upgrade from 0.1.1, a script already running in YouTube can still emit **Extension context invalidated**. The upgrade regression reproduces this from the old `report` call even after 0.1.3 has loaded. Reload the YouTube page itself, then clear the extension's recorded errors to distinguish old entries from new failures. Repeatedly reloading only the extension does not replace the old YouTube document. A screenshot of a retained error is not enough to establish a new failure in the current code.
+
 The API key is stored in this experiment's trusted extension storage and sent only to the selected provider for authentication. Title, channel and advertising label are sent for evaluation; player requests also include two ad-UI flags. Feed cards do not send unrelated player flags. No audio, images, video stream, cookies or account tokens are sent. Reports contain probabilities, timings and action outcomes, not the API key or page text. Session reports are bounded to 200 events and disappear when the browser closes.
 
 If the provider rejects a request, the probe leaves that item alone. Change credentials if needed, then disable and re-enable the experiment to retry. It does not automatically hammer a failing provider or retry a rejected playback action indefinitely.
@@ -47,6 +49,7 @@ pnpm exec playwright-core install chromium
 pnpm test:youtube
 pnpm e2e:youtube
 pnpm e2e:youtube:setup
+pnpm e2e:youtube:upgrade
 pnpm build
 pnpm e2e
 ```
@@ -56,6 +59,8 @@ pnpm e2e
 The existing X E2E remains a separate regression gate. Both runners select the full Chromium browser, because the default headless-shell binary does not load these extensions.
 
 `e2e:youtube:setup` opens a synthetic YouTube page **before installing** the extension, then installs the real package and uses its UI to check onboarding, missing/rejected keys, rate limits, activation, connecting the existing tab without navigation, idempotent injection, mode changes, restricted credential access and redacted diagnostics. It reloads the package with the options closed and verifies automatic reconnection, continued filtering, cleanup, preserved credentials and loaded-version reporting. A simulated denied injection checks that the UI and export retain a useful connection error. Every external request is intercepted; provider responses are mocked. It does not access the user's Chrome profile or test live YouTube.
+
+`e2e:youtube:upgrade` loads the actual 0.1.1 files from Git commit `0b97b53` into a temporary directory, activates that package with a placeholder key, then replaces it with the current files at the same path. The commit must be present in local Git history. It captures isolated-world exceptions and their stack traces, reproduces the legacy-context error, reloads the synthetic YouTube page, and verifies preserved configuration, working filtering and no new errors. It then reloads the current extension alone and verifies clean automatic recovery. No live page or provider is contacted; output is in `reports/youtube-probe-upgrade.json`.
 
 ## Real Jev evaluation
 

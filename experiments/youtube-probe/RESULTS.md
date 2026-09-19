@@ -4,11 +4,14 @@ The extension and Jev API have now been exercised together. All page and player 
 
 The user subsequently supplied `anyfilter-youtube-observations.json`: **version 0.1.1, enabled action mode, configured TypeSafe key, card/skip/16× controls on, one disconnected YouTube tab, zero events**. This is direct evidence that the extension could not communicate with that tab when exported. It contains no Jev decisions or player attempts, so it cannot establish an API rejection or the effect of 16×. It also does not establish why the tab disconnected or attribute earlier observed speed changes to the extension.
 
+A second manual export, `anyfilter-youtube-observations (1).json`, confirms **0.1.3 connected in action mode**, with 24 events: 2 page connections, 20 kept-card evaluations and 2 hidden-card events. The two hidden events may refer to the same card across a page reload; they are not evidence of two distinct ads removed. There are **no player evaluations or actions** in this record. At export time the player is present, but `adShowing` and `adUiVisible` are false. The user reports seeing video ads; whether one was still playing at export time is not yet established. Thus connection and live card filtering now have user-provided evidence, while live player-ad detection remains unresolved.
+
 | Check | Result | Evidence boundary |
 | --- | --- | --- |
 | Decision/controller/provider tests | 24 passed | Local tests, mocked responses, includes late skip, bounded retry and cleanup |
 | Probe extension E2E | 49 passed | Actual MV3 extension; synthetic YouTube DOM, native media, mocked Jev |
 | Installation/activation/reload E2E | 27 passed | Page opened before installing; actual reload and options UI, mocked Jev; connection-error simulation |
+| Legacy-to-current upgrade E2E | 8 passed | Actual 0.1.1 package upgraded to 0.1.3 at the same path; isolated-world error attribution, page reload and current-version reload; mocked pages/API |
 | Real TypeSafe Jev regression | 17/17 passed after repair; 9/17 before | Real API, synthetic labelled inputs; unchanged 0.9 threshold |
 | Real TypeSafe Jev additional cases | 18/20 passed | Additional synthetic inputs not used to select prompts; limitations below |
 | Extension with real TypeSafe Jev | 13 checks passed, 7 real API calls on 0.1.2 | Prior real-API run; synthetic DOM, generated H.264/AAC MP4; not rerun for the connection repair |
@@ -50,7 +53,9 @@ The automated installation test reproduced a disconnected tab after reloading th
 
 The repaired worker reconnects existing YouTube tabs from saved settings on startup; opening options also retries the connection. Invalidated content scripts stop their observers/timers and restore their changes. Options show the loaded version, report **Sin conexión a YouTube** rather than **Filtro activo** when all tabs are disconnected, and preserve a redacted injection error until reconnection. Tab diagnostics include the responding script's version.
 
-Seven added checks cover a real extension reload with options closed, reconnection without page navigation or a manual Connect click, one active script, resumed filtering of new content, preserved key/configuration, matching versions, and actionable disconnected/error states. Together with the existing checks, the suite has 27 passing assertions. No additional real API calls were needed for this lifecycle repair. Tracked in `CLIENTES-vkei`; the user still needs to load 0.1.3 and confirm a connected tab before evaluating live ad behavior.
+Seven added checks cover a real extension reload with options closed, reconnection without page navigation or a manual Connect click, one active script, resumed filtering of new content, preserved key/configuration, matching versions, and actionable disconnected/error states. Together with the existing checks, the suite has 27 passing assertions. No additional real API calls were needed for this lifecycle repair. Tracked in `CLIENTES-vkei`; the second manual export confirms a connected 0.1.3 tab. Live player-ad detection remains under investigation in `CLIENTES-thaz`.
+
+The later screenshot of **Extension context invalidated** prompted a separate upgrade test (`CLIENTES-kmtf`). With 0.1.1 running in an existing page, replacing the package with 0.1.3 produces one exception from the old `report` call at zero-based `content.js:15`. Reloading the page removes the legacy context: filtering and saved settings survive, with zero new isolated-world exceptions or page errors. Reloading 0.1.3 again also passes without a new exception. This reproduces a source of the screenshot's error and explains why the newly displayed source line can be misleading; it does not independently date the user's recorded error. Evidence: `reports/youtube-probe-upgrade.json`. The second user export confirms that their tab now responds with 0.1.3.
 
 ## Skip transition repair in 0.1.2
 

@@ -14,6 +14,7 @@
     "test:youtube": "node --test experiments/youtube-probe/tests/policy.test.mjs",
     "e2e:youtube": "node experiments/youtube-probe/tests/e2e-offline.mjs",
     "e2e:youtube:setup": "node experiments/youtube-probe/tests/onboarding-offline.mjs",
+    "e2e:youtube:upgrade": "node experiments/youtube-probe/tests/upgrade-offline.mjs",
     "e2e:youtube:jev": "node experiments/youtube-probe/tests/e2e-jev.mjs",
     "eval:youtube": "node experiments/youtube-probe/evaluate.mjs"
   },
