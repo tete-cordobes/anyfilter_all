@@ -19,7 +19,7 @@ A second manual export, `anyfilter-youtube-observations (1).json`, confirms **0.
 | 18:39:25.609 | Ad UI ended, 2.105 s after first click, 1.282 s after retry |
 | 18:39:25.753 / 18:39:26.755 | Ad flags false; video duration 2299.1 s, position 5.0 then 5.9 s, rate 1 |
 
-The media samples support a return to main content before the recorded ad's full duration. This is user-provided live-site evidence of detection, Jev evaluation, click dispatch and a subsequent transition, not an agent-controlled live test or proof of which action caused that transition. There is **no 16× attempt** in this export: the ready skip control took priority. It does not validate no-button ads or explain the previous export's false `adShowing` flag.
+The media samples support a return to main content before the recorded ad's full duration. **The user subsequently confirmed pressing Skip manually in this episode.** The transition therefore does not validate automatic skipping: the record establishes detection, Jev evaluation and two programmatic click attempts, with manual intervention before main content resumed. It cannot establish whether either automatic click was accepted. There is **no 16× attempt** in this export: the ready skip control took priority. It does not validate no-button ads or explain the previous export's false `adShowing` flag. Version 0.1.5 repairs badge recognition; it does not change click dispatch or demonstrate a repair of automatic skipping.
 
 The ad sample identifies a concrete detector gap: its visible `ytp-ad-badge--clean-player` / `ytp-ad-badge--stark-clean-player` element and `ytp-ad-badge__text--clean-player` child are marked `advertising`, but `knownAdUi=false`. No visible badge matched the old selectors. The ready skip button supplied `adUiVisible=true`; with that button unavailable, the same badge layout would not pass the local gate. Version 0.1.5 adds the exact observed outer `ytp-ad-badge--clean-player` class to the badge selectors. The same-player ad flag, visibility checks, positive Jev scores and media bounds remain mandatory. It does not treat `ad-created` or a generic advertising label as an active ad. Tracked in `CLIENTES-9yn8`; effectiveness on live no-button ads remains in `CLIENTES-hjng`.
 
@@ -36,7 +36,7 @@ The regression reconstructed those badge classes in the controlled page and **fa
 | Extension with real TypeSafe Jev | 13 checks passed, 7 real API calls on 0.1.2 | Prior real-API run; synthetic DOM, generated H.264/AAC MP4; not rerun for the connection repair |
 | Existing X extension E2E | 47 passed in initial baseline | Existing offline fixtures; X runtime code unchanged by this repair |
 | Main extension typecheck/build | Passed | WXT production build |
-| Live YouTube advertisements | User export: one evaluated episode, two skip attempts, subsequent main content | Not agent-controlled; no 16× attempt in that export; manual retest of 0.1.5 without a ready skip still needed |
+| Live YouTube advertisements | User export: one evaluated episode, two automatic skip attempts; user confirms also pressing Skip | Automatic skipping unverified because of manual intervention; no 16× attempt; 0.1.5 still needs a live test without manual skipping |
 
 ## Read-only diagnostics in 0.1.4
 
