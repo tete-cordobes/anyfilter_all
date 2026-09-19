@@ -40,7 +40,7 @@ export class AdController {
         episode.pending = false;
         episode.result = result;
         this.report({ surface: 'player', outcome: result.ok ? 'evaluated' : 'evaluation-error',
-          episode: episode.serial, scores: result.scores, error: result.error, latencyMs: result.latencyMs });
+          episode: episode.serial, scores: result.scores, error: result.error, status: result.status, latencyMs: result.latencyMs });
       }, () => {
         if (this.episode === episode) {
           episode.pending = false;
@@ -71,6 +71,13 @@ export class AdController {
       if (episode.attempt && this.now() - episode.attempt.at >= waitMs && !episode.outcomes.has('still-playing')) {
         episode.outcomes.add('still-playing');
         this.report({ surface: 'player', outcome: 'ad-still-playing-after-attempt', action, episode: episode.serial });
+        if (action === 'speed-16x') {
+          // Some media pipelines accept 16x but then stop advancing. Do not
+          // strand an ad at our requested speed after the experiment times out.
+          try { episode.restore?.(); }
+          catch { this.report({ surface: 'player', outcome: 'restore-error', episode: episode.serial }); }
+          finally { episode.restore = null; }
+        }
       }
       return;
     }

@@ -2,7 +2,12 @@ import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { evaluate } from './extension/provider.js';
 import { DEFAULTS } from './extension/shared.js';
-import { cases } from './tests/cases.mjs';
+import { cases as regressionCases } from './tests/cases.mjs';
+import { cases as holdoutCases } from './tests/holdout-cases.mjs';
+
+const holdout = process.argv.includes('--holdout');
+const cases = holdout ? holdoutCases : regressionCases;
+const reportPath = holdout ? 'reports/youtube-probe-jev-holdout.json' : 'reports/youtube-probe-jev.json';
 
 if (existsSync('.env.local')) process.loadEnvFile('.env.local');
 const provider = process.env.ANYFILTER_PROBE_PROVIDER ||
@@ -13,11 +18,13 @@ const apiKey = provider === 'typesafe' ? process.env.TYPESAFE_API_KEY || process
 mkdirSync('reports', { recursive: true });
 const report = {
   at: new Date().toISOString(), revision: execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim(),
+  workingTreeDirty: !!execFileSync('git', ['status', '--porcelain'], { encoding: 'utf8' }).trim(),
+  dataset: holdout ? 'holdout' : 'regression',
   evidence: 'Real Jev API with synthetic labelled evidence. Does not test live YouTube playback or DOM.',
   provider, status: apiKey ? 'running' : 'blocked-no-api-key', results: [],
 };
 if (!apiKey) {
-  writeFileSync('reports/youtube-probe-jev.json', JSON.stringify(report, null, 2));
+  writeFileSync(reportPath, JSON.stringify(report, null, 2));
   console.error('BLOCKED: set TYPESAFE_API_KEY or AI_GATEWAY_API_KEY in .env.local. No model requests were made.');
   process.exitCode = 2;
 } else {
@@ -37,7 +44,7 @@ if (!apiKey) {
     p50Ms: times[Math.ceil(times.length * 0.5) - 1] ?? null,
     p95Ms: times[Math.ceil(times.length * 0.95) - 1] ?? null };
   report.status = report.summary.failed || report.summary.unrun ? 'failed-or-incomplete' : 'passed';
-  writeFileSync('reports/youtube-probe-jev.json', JSON.stringify(report, null, 2));
+  writeFileSync(reportPath, JSON.stringify(report, null, 2));
   console.log(JSON.stringify(report.summary));
   process.exitCode = report.status === 'passed' ? 0 : 1;
 }

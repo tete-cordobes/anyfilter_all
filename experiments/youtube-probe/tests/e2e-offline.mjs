@@ -38,7 +38,7 @@ try {
       if (delayMs) await new Promise((resolve) => setTimeout(resolve, delayMs));
       if (providerFailure) return route.fulfill({ status: providerFailure, body: 'fixture error' });
       const state = body.state;
-      const ad = state.surface === 'player' ? state.adShowing && state.adUiVisible : !!state.sponsorLabel;
+      const ad = state.youtubeSurface === 'player' ? state.playerIsShowingAd && state.adControlsAreVisible : !!state.visibleAdvertisingLabel;
       const filter = !state.title.includes('MODEL_KEEP') && (ad || state.title.includes('CRYPTO'));
       const field = url.includes('typesafe') ? 'noul' : 'probability';
       return route.fulfill({ json: { answers: { advertisement: { [field]: ad ? 0.99 : 0.01 },
@@ -52,6 +52,7 @@ try {
   const id = new URL(worker.url()).host;
   const options = await context.newPage();
   await options.goto('chrome-extension://' + id + '/options.html');
+  await options.getByText('Ajustes del filtro', { exact: true }).click();
   await options.locator('#key').fill('offline-fixture-key-not-real');
   await options.locator('#enabled').check();
   await options.getByRole('button', { name: 'Guardar configuración' }).click();
@@ -80,10 +81,10 @@ try {
   check('observe mode keeps cards visible', !(await hidden('#sponsored')));
   check('nested homepage lockup is classified only once', calls.filter((c) => c.state.title.startsWith('SPONSORED')).length === 1);
   check('ordinary video mentioning ads remains visible', !(await hidden('#organic')));
-  check('no player classification during normal playback', !calls.some((c) => c.state.surface === 'player'));
+  check('no player classification during normal playback', !calls.some((c) => c.state.youtubeSurface === 'player'));
   await page.evaluate(() => document.querySelector('#movie_player').classList.add('ad-created'));
   await page.waitForTimeout(400);
-  check('preloaded ad-created marker does not classify ordinary playback', !calls.some((c) => c.state.surface === 'player'));
+  check('preloaded ad-created marker does not classify ordinary playback', !calls.some((c) => c.state.youtubeSurface === 'player'));
 
   await configure({ mode: 'act' }); await waitEvent('hidden');
   await page.waitForFunction(() => document.querySelector('#crypto').classList.contains('anyfilter-youtube-probe-hidden'));
@@ -197,11 +198,11 @@ try {
   await configure({ accelerateAds: false });
 
   await configure({ seekAds: false }); delayMs = 900;
-  const playerCalls = calls.filter((c) => c.state.surface === 'player').length;
+  const playerCalls = calls.filter((c) => c.state.youtubeSurface === 'player').length;
   await page.evaluate(() => fixture.startAd('skip', 'Late response ad'));
   const playerDeadline = Date.now() + 5000;
-  while (calls.filter((c) => c.state.surface === 'player').length === playerCalls && Date.now() < playerDeadline) await page.waitForTimeout(50);
-  check('delayed player request started', calls.filter((c) => c.state.surface === 'player').length > playerCalls);
+  while (calls.filter((c) => c.state.youtubeSurface === 'player').length === playerCalls && Date.now() < playerDeadline) await page.waitForTimeout(50);
+  check('delayed player request started', calls.filter((c) => c.state.youtubeSurface === 'player').length > playerCalls);
   const clicksBefore = await page.evaluate(() => fixture.clicks);
   await page.evaluate(() => fixture.endAd()); await page.waitForTimeout(1300); delayMs = 0;
   check('late Jev verdict cannot skip resumed main content', await page.evaluate(() => fixture.clicks) === clicksBefore);

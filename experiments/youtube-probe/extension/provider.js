@@ -1,6 +1,12 @@
 import { questionsFor, validScores } from './shared.js';
 
 export function buildRequest(provider, apiKey, state, rule) {
+  // A feed card has no player state. Sending adShowing:false for sponsored
+  // cards contradicted the badge evidence, while overloaded questions caused
+  // real Jev false negatives. Keep observations descriptive and surface-specific.
+  const evidence = { youtubeSurface: state.surface, title: state.title, channel: state.channel,
+    visibleAdvertisingLabel: state.sponsorLabel,
+    ...(state.surface === 'player' ? { playerIsShowingAd: state.adShowing, adControlsAreVisible: state.adUiVisible } : {}) };
   const type = provider === 'vercel' ? 'boolean' : 'noul';
   const questions = Object.fromEntries(Object.entries(questionsFor(rule)).map(([id, instructions]) =>
     [id, { type, instructions }]));
@@ -8,12 +14,12 @@ export function buildRequest(provider, apiKey, state, rule) {
     url: 'https://ai-gateway.vercel.sh/v4/ai/evaluation-model',
     headers: { Authorization: 'Bearer ' + apiKey, 'Content-Type': 'application/json',
       'ai-model-id': 'typesafe-ai/jev', 'ai-gateway-protocol-version': '0.0.1', 'ai-gateway-auth-method': 'api-key' },
-    body: { state, questions },
+    body: { state: evidence, questions },
   };
   return {
     url: 'https://api.typesafe.ai/v1/systemone',
     headers: { Authorization: 'Bearer ' + apiKey, 'Content-Type': 'application/json' },
-    body: { model: 'jev-latest', state, questions },
+    body: { model: 'jev-latest', state: evidence, questions },
   };
 }
 

@@ -6,6 +6,7 @@ const HIDDEN = 'anyfilter-youtube-probe-hidden';
 
 export async function start() {
   let settings = await chrome.runtime.sendMessage({ type: 'probe-config' });
+  if (!settings || typeof settings.enabled !== 'boolean') throw new Error('Configuration unavailable');
   let generation = 0;
   let cards = new WeakMap();
   const hidden = new Set();
@@ -52,7 +53,7 @@ export async function start() {
         hidden.add(card.node);
         outcome = 'hidden';
       }
-      report({ surface: 'card', outcome, scores: result.scores, latencyMs: result.latencyMs, error: result.error });
+      report({ surface: 'card', outcome, scores: result.scores, latencyMs: result.latencyMs, error: result.error, status: result.status });
     } catch { report({ surface: 'card', outcome: 'evaluation-error', error: 'transport' }); }
   }
 
@@ -84,8 +85,14 @@ export async function start() {
   const observer = new MutationObserver(schedule);
   observer.observe(document.body, { childList: true, subtree: true, characterData: true,
     attributes: true, attributeFilter: ['class', 'href', 'src', 'hidden', 'aria-hidden', 'disabled', 'aria-disabled'] });
-  chrome.runtime.onMessage.addListener((message) => {
-    if (message?.type === 'probe-settings') {
+  chrome.runtime.onMessage.addListener((message, _sender, respond) => {
+    if (message?.type === 'probe-ping') {
+      const snapshot = readPlayer();
+      respond({ ok: true, enabled: settings.enabled, mode: settings.mode,
+        supported: filteredPage(), cards: cardNodes().length,
+        player: !!snapshot, adShowing: snapshot?.state.adShowing === true,
+        adUiVisible: snapshot?.state.adUiVisible === true });
+    } else if (message?.type === 'probe-settings') {
       settings = message.settings;
       invalidate();
       restored.clear();
@@ -99,5 +106,6 @@ export async function start() {
   window.addEventListener('popstate', schedule);
   window.addEventListener('scroll', schedule, { passive: true });
   setInterval(scan, 250);
+  report({ surface: 'connection', outcome: 'page-connected' });
   scan();
 }

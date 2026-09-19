@@ -158,11 +158,26 @@ test('16x cleanup runs on disabling, navigation and replacing the ad', async () 
 test('both provider adapters send structured evidence and parse real response contracts', async () => {
   for (const provider of ['typesafe', 'vercel']) {
     const request = buildRequest(provider, 'not-a-real-key', { surface: 'player' }, 'Hide ads');
-    assert.equal(request.body.state.surface, 'player');
+    assert.equal(request.body.state.youtubeSurface, 'player');
     const field = provider === 'vercel' ? 'probability' : 'noul';
     const result = await evaluate({ ...settings, apiKey: 'not-a-real-key', provider }, {}, async () =>
       new Response(JSON.stringify({ answers: { advertisement: { [field]: 0.99 }, filter: { [field]: 0.95 } } })));
     assert.equal(result.ok, true); assert.equal(result.scores.filter, 0.95);
+  }
+});
+
+test('16x that leaves the ad playing past its deadline is restored once', async () => {
+  for (const fails of [false, true]) {
+    let restored = 0;
+    const h = harness(); h.live.skipAvailable = false;
+    h.controller.execute = () => ({ restore: () => { restored += 1; if (fails) throw new Error('detached media'); } });
+    const accelerated = { ...settings, accelerateAds: true };
+    h.controller.tick(accelerated); await flush(); h.controller.tick(accelerated);
+    h.time = 10000;
+    h.controller.tick(accelerated); h.controller.tick(accelerated); h.controller.reset();
+    assert.equal(restored, 1);
+    assert(h.reports.some((r) => r.outcome === 'ad-still-playing-after-attempt'));
+    assert.equal(h.reports.some((r) => r.outcome === 'restore-error'), fails);
   }
 });
 
@@ -191,4 +206,15 @@ test('missing credentials never make a network request', async () => {
   let calls = 0;
   const result = await evaluate({ ...settings, apiKey: '' }, {}, async () => { calls += 1; });
   assert.equal(calls, 0); assert.equal(result.error, 'no-key');
+});
+
+test('card evidence cannot contradict its advertising badge with an unrelated player flag', () => {
+  const card = { surface: 'card', title: 'Shoes', channel: 'Shop', sponsorLabel: 'Sponsored', adShowing: false, adUiVisible: true };
+  const evidence = buildRequest('typesafe', 'test', card, 'Hide ads').body.state;
+  assert.equal(evidence.visibleAdvertisingLabel, 'Sponsored');
+  assert.equal('playerIsShowingAd' in evidence, false);
+  assert.equal('adShowing' in evidence, false);
+  const player = buildRequest('typesafe', 'test', { ...card, surface: 'player', adShowing: true }, 'Hide ads').body.state;
+  assert.equal(player.playerIsShowingAd, true);
+  assert.equal(player.adControlsAreVisible, true);
 });
