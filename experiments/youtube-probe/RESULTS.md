@@ -1,23 +1,29 @@
-# YouTube probe results — 2026-09-19, version 0.1.3
+# YouTube probe results — 2026-09-19, version 0.1.4 (diagnostics)
 
 The extension and Jev API have now been exercised together. All page and player evidence in these automated tests is synthetic. **The agent has not tested live YouTube advertisements.** The user reported no effect with version 0.1.0; after updating to 0.1.1, they observed faster real ads but no automatic skip, then clarified that no skip button appears at all. That observation does not demonstrate a failed skip click. Whether acceleration shortens the wait until the main video resumes is still unconfirmed. The 0.1.2 skip repair covers independently reproduced failures when a button does become available; live confirmation remains pending.
 
 The user subsequently supplied `anyfilter-youtube-observations.json`: **version 0.1.1, enabled action mode, configured TypeSafe key, card/skip/16× controls on, one disconnected YouTube tab, zero events**. This is direct evidence that the extension could not communicate with that tab when exported. It contains no Jev decisions or player attempts, so it cannot establish an API rejection or the effect of 16×. It also does not establish why the tab disconnected or attribute earlier observed speed changes to the extension.
 
-A second manual export, `anyfilter-youtube-observations (1).json`, confirms **0.1.3 connected in action mode**, with 24 events: 2 page connections, 20 kept-card evaluations and 2 hidden-card events. The two hidden events may refer to the same card across a page reload; they are not evidence of two distinct ads removed. There are **no player evaluations or actions** in this record. At export time the player is present, but `adShowing` and `adUiVisible` are false. The user reports seeing video ads; whether one was still playing at export time is not yet established. Thus connection and live card filtering now have user-provided evidence, while live player-ad detection remains unresolved.
+A second manual export, `anyfilter-youtube-observations (1).json`, confirms **0.1.3 connected in action mode**, with 24 events: 2 page connections, 20 kept-card evaluations and 2 hidden-card events. The two hidden events may refer to the same card across a page reload; they are not evidence of two distinct ads removed. There are **no player evaluations or actions** in this record. At export time the player is present, but `adShowing` and `adUiVisible` are false. **The user confirms that the ad was still playing when exported.** This establishes a discrepancy in local player-ad recognition. The previous export did not include the underlying player markup, so it does not identify the missing selector, a different player root, or another presentation mechanism. Connection and live card filtering now have user-provided evidence; live player-ad detection remains unresolved in `CLIENTES-thaz`.
 
 | Check | Result | Evidence boundary |
 | --- | --- | --- |
 | Decision/controller/provider tests | 24 passed | Local tests, mocked responses, includes late skip, bounded retry and cleanup |
-| Probe extension E2E | 49 passed | Actual MV3 extension; synthetic YouTube DOM, native media, mocked Jev |
+| Probe extension E2E | 55 passed | Actual MV3 extension; synthetic YouTube DOM, native media, mocked Jev; bounded redacted player diagnostics |
 | Installation/activation/reload E2E | 27 passed | Page opened before installing; actual reload and options UI, mocked Jev; connection-error simulation |
-| Legacy-to-current upgrade E2E | 8 passed | Actual 0.1.1 package upgraded to 0.1.3 at the same path; isolated-world error attribution, page reload and current-version reload; mocked pages/API |
+| Legacy-to-current upgrade E2E | 8 passed | Actual 0.1.1 package upgraded to 0.1.4 at the same path; isolated-world error attribution, page reload and current-version reload; mocked pages/API |
 | Real TypeSafe Jev regression | 17/17 passed after repair; 9/17 before | Real API, synthetic labelled inputs; unchanged 0.9 threshold |
 | Real TypeSafe Jev additional cases | 18/20 passed | Additional synthetic inputs not used to select prompts; limitations below |
 | Extension with real TypeSafe Jev | 13 checks passed, 7 real API calls on 0.1.2 | Prior real-API run; synthetic DOM, generated H.264/AAC MP4; not rerun for the connection repair |
 | Existing X extension E2E | 47 passed in initial baseline | Existing offline fixtures; X runtime code unchanged by this repair |
 | Main extension typecheck/build | Passed | WXT production build |
 | Live YouTube advertisements | Not tested by the agent | Browser connection still unavailable; manual retest of updated extension needed |
+
+## Read-only diagnostics in 0.1.4
+
+The live browser connection remains unavailable. To obtain the evidence needed for the detector repair, exports now include the current player inventory and the last three samples taken while the YouTube watch tab was visible. Captured fields are limited to UI classes, bounded element inventories, visibility, normalized advertising/skip labels, and media state. Titles, URLs, arbitrary attribute values, HTML and credentials are omitted. Samples stay local and do not change the Jev inputs or playback policy.
+
+Six browser checks use a deliberately unrecognized fixture layout: the strict detector remains negative, while the diagnostic record identifies its visible advertising label and selected media. They verify no action or classification is authorized by diagnostics alone, bounded arrays, redaction and retention across a simulated tab hide. Headless Chromium reports both tabs visible after `bringToFront()`, so the visibility signal is explicitly simulated in the isolated content-script world for that retention check. This fixture is not claimed to match the user's actual markup. The diagnostics work is tracked in `CLIENTES-s5zu`; the detector repair remains open in `CLIENTES-thaz`, awaiting the richer real-site sample.
 
 ## Confirmed classification failure and repair
 

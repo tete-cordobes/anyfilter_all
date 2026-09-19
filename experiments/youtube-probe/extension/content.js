@@ -1,5 +1,5 @@
 import { AdController } from './controller.js';
-import { cardNodes, readCard, readPlayer, executePlayerAction, filteredPage } from './reader.js';
+import { cardNodes, readCard, readPlayer, readPlayerDiagnostics, executePlayerAction, filteredPage } from './reader.js';
 import { matchesRule } from './shared.js';
 
 const HIDDEN = 'anyfilter-youtube-probe-hidden';
@@ -15,6 +15,8 @@ export async function start() {
   let scheduled = 0;
   let interval;
   let stopped = false;
+  let diagnosticInterval;
+  let playerSamples = [];
   const report = (event) => {
     try { void chrome.runtime.sendMessage({ type: 'probe-report', event }).catch(() => {}); }
     catch { /* The extension was reloaded; this old context can no longer report. */ }
@@ -43,6 +45,13 @@ export async function start() {
     player.reset();
     restoreAll(false);
     cards = new WeakMap();
+    playerSamples = [];
+  }
+
+  function samplePlayer() {
+    if (stopped || !settings.enabled || !settings.skipAds || document.hidden || location.pathname !== '/watch') return;
+    if (!chrome.runtime?.id) { stop(); return; }
+    playerSamples = [...playerSamples, readPlayerDiagnostics()].slice(-3);
   }
 
   async function evaluateCard(card) {
@@ -96,6 +105,7 @@ export async function start() {
     if (stopped) return;
     stopped = true;
     clearInterval(interval);
+    clearInterval(diagnosticInterval);
     clearTimeout(scheduled);
     observer.disconnect();
     document.removeEventListener('yt-navigate-finish', navigate);
@@ -116,6 +126,7 @@ export async function start() {
         player: !!snapshot, adShowing: snapshot?.state.adShowing === true,
         skipAvailable: snapshot?.skipAvailable === true, skipState: snapshot?.skipState ?? 'missing',
         skipCandidates: snapshot?.skipCandidates ?? 0,
+        playerDiagnostics: readPlayerDiagnostics(snapshot), playerSamples,
         adUiVisible: snapshot?.state.adUiVisible === true });
     } else if (message?.type === 'probe-settings') {
       settings = message.settings;
@@ -132,6 +143,7 @@ export async function start() {
   window.addEventListener('popstate', schedule);
   window.addEventListener('scroll', schedule, { passive: true });
   interval = setInterval(scan, 250);
+  diagnosticInterval = setInterval(samplePlayer, 1000);
   report({ surface: 'connection', outcome: 'page-connected' });
   scan();
 }

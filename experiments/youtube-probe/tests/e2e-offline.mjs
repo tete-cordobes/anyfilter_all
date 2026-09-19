@@ -279,6 +279,51 @@ try {
   await page.evaluate(() => { fixture.rejectClick = false; });
   await page.waitForFunction((before) => fixture.clicks === before + 2 && fixture.source === 'content', beforeRetry);
   check('one delayed retry recovers when the first visible skip click is ignored', await page.evaluate(() => fixture.clicks) === beforeRetry + 2);
+
+  const beforeUnknownLayout = calls.filter((call) => call.state.youtubeSurface === 'player').length;
+  await page.bringToFront();
+  await page.evaluate(async () => {
+    await fixture.startAd('no-skip', 'PRIVATE_TITLE_MUST_NOT_BE_EXPORTED', 8);
+    document.querySelector('#movie_player').classList.remove('ad-showing');
+    const overlay = document.createElement('div'); overlay.id = 'unknown-ad-ui'; overlay.className = 'ytp-ad-player-overlay-v2';
+    overlay.setAttribute('data-private', 'PRIVATE_ATTRIBUTE_MUST_NOT_BE_EXPORTED');
+    overlay.innerHTML = '<span class="ytp-ad-label-v2">Patrocinado</span><a href="https://private.invalid/SECRET_URL">PRIVATE_BODY_MUST_NOT_BE_EXPORTED</a>';
+    document.querySelector('#movie_player').append(overlay);
+  });
+  await options.waitForFunction(async () => {
+    const health = await chrome.runtime.sendMessage({ type: 'probe-diagnostics' });
+    return health.tabs[0]?.playerSamples?.length === 3 && health.tabs[0].playerSamples.every((sample) =>
+      sample.signals.some((signal) => signal.label === 'advertising' && signal.classes.includes('ytp-ad-label-v2')));
+  });
+  const unknownHealth = await options.evaluate(() => chrome.runtime.sendMessage({ type: 'probe-diagnostics' }));
+  const unknown = unknownHealth.tabs[0];
+  check('diagnostics expose a visible advertising label even when the current detector misses its layout', !unknown.adShowing && !unknown.adUiVisible &&
+    unknown.playerDiagnostics.signals.some((signal) => signal.visible && signal.label === 'advertising' && !signal.knownAdUi));
+  check('diagnostic observations alone never accelerate or classify an unrecognized player', calls.filter((call) => call.state.youtubeSurface === 'player').length === beforeUnknownLayout &&
+    await page.evaluate(() => document.querySelector('video').playbackRate === 1.25));
+  check('the export identifies selected media and its actual playback state', unknown.playerDiagnostics.videos.some((video) => video.selected && video.playbackRate === 1.25));
+  await options.bringToFront();
+  // Headless Chromium keeps both tabs "visible" even after bringToFront().
+  // Simulate the standard visibility signal in the extension's isolated world.
+  await worker.evaluate(async () => {
+    const [tab] = await chrome.tabs.query({ url: 'https://www.youtube.com/*' });
+    await chrome.scripting.executeScript({ target: { tabId: tab.id }, func: () => {
+      Object.defineProperty(document, 'hidden', { value: true, configurable: true });
+    } });
+  });
+  const samplesBeforeLeaving = JSON.stringify((await options.evaluate(() => chrome.runtime.sendMessage({ type: 'probe-diagnostics' }))).tabs[0].playerSamples);
+  await page.waitForTimeout(1200);
+  const afterLeaving = await options.evaluate(() => chrome.runtime.sendMessage({ type: 'probe-diagnostics' }));
+  check('three visible-tab samples survive a simulated tab hide', JSON.stringify(afterLeaving.tabs[0].playerSamples) === samplesBeforeLeaving &&
+    !afterLeaving.tabs[0].playerDiagnostics.documentVisible &&
+    afterLeaving.tabs[0].playerSamples.every((sample) => sample.documentVisible));
+  const serializedHealth = JSON.stringify(afterLeaving);
+  check('player diagnostics omit page text, arbitrary attributes, media URLs and credentials',
+    !serializedHealth.includes('PRIVATE_') && !serializedHealth.includes('private.invalid') && !serializedHealth.includes('fixture-ad.wav') &&
+    !serializedHealth.includes('offline-fixture-key-not-real'));
+  check('player diagnostic arrays are bounded', afterLeaving.tabs[0].playerSamples.length <= 3 &&
+    afterLeaving.tabs[0].playerDiagnostics.signals.length <= 40 && afterLeaving.tabs[0].playerDiagnostics.videos.length <= 6);
+  await page.evaluate(() => { document.querySelector('#unknown-ad-ui').remove(); fixture.endAd(); });
   await configure({ enabled: false });
   check('exportable events contain no key or page text', !JSON.stringify(await events()).includes('offline-fixture-key-not-real') && !JSON.stringify(await events()).includes('Buy Example Shoes'));
   check('no uncaught content errors', errors.length === 0);

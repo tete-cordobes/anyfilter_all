@@ -92,6 +92,7 @@ async function pageStatus(tab, connect) {
       ...(!state?.ok ? { connectionError: connectionFailures.get(tab.id) ?? 'content-not-responding' } : {}),
       ...(state?.ok ? { enabled: state.enabled, mode: state.mode, supported: state.supported,
         version: state.version,
+        playerDiagnostics: state.playerDiagnostics, playerSamples: state.playerSamples,
         cards: state.cards, player: state.player, adShowing: state.adShowing, adUiVisible: state.adUiVisible,
         skipAvailable: state.skipAvailable, skipState: state.skipState, skipCandidates: state.skipCandidates } : {}) };
   } catch {

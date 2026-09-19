@@ -56,6 +56,58 @@ export function readPlayer() {
     seekable: !!media?.seekable?.length && media.seekable.end(media.seekable.length - 1) >= duration - 0.25 };
 }
 
+// Read-only, bounded diagnostics for player layouts that the detector misses.
+// No text, URLs, arbitrary attributes or media sources are returned.
+export function readPlayerDiagnostics(snapshot = readPlayer()) {
+  const selected = snapshot?.player;
+  const roots = [...document.querySelectorAll('#movie_player,.html5-video-player,ytd-player')].slice(0, 6);
+  const cssClasses = (node) => [...node.classList].filter((name) =>
+    /^(?:ytp-|yt[A-Z]|yt-|ytm-|ytd-|html5-|ad-|video-ads)/.test(name) && /^[\w-]{1,80}$/.test(name)).slice(0, 12);
+  const shape = (node) => {
+    const rect = node.getBoundingClientRect();
+    return { tag: node.localName, classes: cssClasses(node), visible: visible(node), openShadowRoot: !!node.shadowRoot,
+      inViewport: rect.bottom > 0 && rect.right > 0 && rect.top < innerHeight && rect.left < innerWidth,
+      width: Math.round(rect.width), height: Math.round(rect.height),
+      insideSelectedPlayer: node === selected || !!selected?.contains(node) };
+  };
+  const labelKind = (node) => {
+    const raw = node.getAttribute('aria-label') || node.textContent || '';
+    if (raw.length > 80) return null;
+    const label = raw.trim().replace(/\s+/g, ' ');
+    if (/^(?:ad|advertisement|sponsored|anuncio|publicidad|patrocinado)(?:\s*\d+(?:\s*(?:of|de|\/)\s*\d+)?)?$/i.test(label)) return 'advertising';
+    if (readySkipLabel.test(label)) return 'skip';
+    if (/^(?:visit advertiser|visitar anunciante|about this ad|acerca de este anuncio)$/i.test(label)) return 'advertiser-control';
+    return null;
+  };
+  const signals = []; const seen = new Set();
+  const add = (node) => {
+    if (seen.has(node) || signals.length >= 120) return;
+    const label = labelKind(node);
+    if (!label && ![...node.classList].some((name) => /ad-|ads|sponsor|skip|Ad[A-Z]/.test(name))) return;
+    seen.add(node);
+    signals.push({ ...shape(node), label,
+      knownAdUi: node.matches(AD_UI), knownSkip: node.matches(SKIP),
+      disabled: node.matches(':disabled') || !!node.closest('[aria-disabled="true"],[inert]') });
+  };
+  for (const root of roots) {
+    add(root);
+    for (const node of [...root.querySelectorAll('*')].slice(0, 600)) add(node);
+  }
+  for (const node of [...document.querySelectorAll('[class*="ytp-ad-"],[class*="ytAd"],.video-ads')].slice(0, 80)) add(node);
+  const videos = [...document.querySelectorAll('video')].slice(0, 6).map((media) => ({ ...shape(media),
+    selected: media === snapshot?.media, paused: media.paused, ended: media.ended, readyState: media.readyState,
+    duration: Number.isFinite(media.duration) ? Math.round(media.duration * 10) / 10 : null,
+    currentTime: Math.round(media.currentTime * 10) / 10, playbackRate: media.playbackRate,
+    hasSource: !!media.currentSrc, seekableRanges: media.seekable.length }));
+  return { at: new Date().toISOString(), page: location.pathname === '/watch' ? 'watch' : 'other',
+    documentVisible: !document.hidden, selectedPlayerPresent: !!selected,
+    adShowing: snapshot?.state.adShowing === true, adUiVisible: snapshot?.state.adUiVisible === true,
+    roots: roots.map((node) => ({ ...shape(node), selected: node === selected })),
+    signals: signals.sort((a, b) => Number(b.visible) - Number(a.visible)).slice(0, 40),
+    signalsTruncated: signals.length > 40, videos,
+    frames: [...document.querySelectorAll('iframe')].slice(0, 6).map(shape) };
+}
+
 export function executePlayerAction(action, expected) {
   const fresh = readPlayer();
   if (!fresh || fresh.identity !== expected.identity || fresh.player !== expected.player ||
