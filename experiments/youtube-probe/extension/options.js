@@ -1,6 +1,7 @@
 import { settingsFrom } from './shared.js';
 
 const $ = (id) => document.getElementById(id);
+$('version').textContent = 'Versión ' + chrome.runtime.getManifest().version;
 let settings = settingsFrom((await chrome.storage.local.get('settings')).settings);
 const values = ['provider', 'rule', 'mode'];
 const flags = ['enabled', 'filterCards', 'skipAds', 'accelerateAds', 'seekAds'];
@@ -29,6 +30,8 @@ function errorText(result) {
     'queue-timeout': 'La evaluación caducó mientras esperaba su turno. Vuelve a activar el filtro para reintentar.',
     'queue-full': 'Hay demasiadas tarjetas pendientes de evaluar. Vuelve a activar el filtro para reintentar.',
     'settings-changed': 'La configuración cambió durante una evaluación. La respuesta anterior se descartó.',
+    'content-not-responding': 'YouTube no responde a la extensión. Pulsa «Conectar pestañas de YouTube» o recarga YouTube.',
+    'injection-failed': 'No se pudo conectar con YouTube. Revisa el acceso de AnyFilter a youtube.com en Chrome y recarga la pestaña.',
   };
   return (messages[result?.error] ?? 'No se pudo completar la operación. Recarga la extensión y vuelve a probar.') +
     (Number.isFinite(result?.status) ? ` (HTTP ${result.status})` : '');
@@ -84,12 +87,14 @@ async function refresh() {
     ]);
     if (!health?.ok) throw new Error('No diagnostics');
     const live = health.settings;
+    const connected = health.tabs.filter((tab) => tab.connected);
     $('health-state').textContent = !health.hasKey ? 'Sin configurar: introduce tu clave de Jev.' :
       !live.enabled ? 'Desactivado: pulsa «Comprobar Jev y activar filtro».' :
+        !health.tabs.length ? 'Configurado: abre YouTube en este perfil para usar el filtro.' :
+        !connected.length ? 'Sin conexión a YouTube: el filtro no puede actuar en esas pestañas.' :
         live.mode === 'observe' ? 'Modo observar: no se oculta ni acelera nada.' :
           !live.filterCards && !live.skipAds ? 'Sin filtros activos: activa tarjetas o anuncios en los ajustes.' :
             `Filtro activo · Tarjetas: ${live.filterCards ? 'sí' : 'no'} · Anuncios: ${live.skipAds ? 'sí' : 'no'} · 16×: ${live.skipAds && live.accelerateAds ? 'sí' : 'no'}`;
-    const connected = health.tabs.filter((tab) => tab.connected);
     const unsupported = connected.filter((tab) => !tab.supported).length;
     const noCards = live.filterCards && connected.some((tab) => tab.supported) && connected.every((tab) => !tab.cards);
     $('health-youtube').textContent = !health.tabs.length ? 'Abre YouTube en este mismo perfil de Chrome.' :
@@ -112,7 +117,9 @@ async function refresh() {
     const attempts = events.filter((e) => e.outcome === 'action-attempted').length;
     $('health-activity').textContent = `Actividad reciente: ${evaluations} evaluaciones · ${hidden} tarjetas ocultadas · ${attempts} intentos sobre anuncios.`;
     const latest = [...events].reverse().find((e) => e.error || ['jev-connected', 'evaluated', 'kept', 'hidden', 'would-hide'].includes(e.outcome));
-    $('health-error').textContent = latest?.error ? 'Última evaluación: ' + errorText(latest) : '';
+    const connectionFailure = health.tabs.find((tab) => !tab.connected && tab.connectionError);
+    $('health-error').textContent = connectionFailure ? errorText({ error: connectionFailure.connectionError }) :
+      latest?.error ? 'Última evaluación: ' + errorText(latest) : '';
     $('events').textContent = JSON.stringify({ version: chrome.runtime.getManifest().version,
       scope: 'YouTube experiment; events are not proof of blocked ads',
       configuration: { provider: live.provider, hasKey: health.hasKey, enabled: live.enabled, mode: live.mode,
@@ -138,4 +145,7 @@ $('export').addEventListener('click', async () => {
 });
 chrome.storage.onChanged.addListener((_changes, area) => { if (area === 'session') void refresh(); });
 setInterval(() => { if (!document.hidden) void refresh(); }, 2000);
+if (settings.enabled) {
+  try { await send({ type: 'probe-connect-tabs' }); } catch { /* refresh shows connection status. */ }
+}
 await refresh();

@@ -1,15 +1,17 @@
-# YouTube probe results — 2026-09-19, version 0.1.2
+# YouTube probe results — 2026-09-19, version 0.1.3
 
 The extension and Jev API have now been exercised together. All page and player evidence in these automated tests is synthetic. **The agent has not tested live YouTube advertisements.** The user reported no effect with version 0.1.0; after updating to 0.1.1, they observed faster real ads but no automatic skip, then clarified that no skip button appears at all. That observation does not demonstrate a failed skip click. Whether acceleration shortens the wait until the main video resumes is still unconfirmed. The 0.1.2 skip repair covers independently reproduced failures when a button does become available; live confirmation remains pending.
+
+The user subsequently supplied `anyfilter-youtube-observations.json`: **version 0.1.1, enabled action mode, configured TypeSafe key, card/skip/16× controls on, one disconnected YouTube tab, zero events**. This is direct evidence that the extension could not communicate with that tab when exported. It contains no Jev decisions or player attempts, so it cannot establish an API rejection or the effect of 16×. It also does not establish why the tab disconnected or attribute earlier observed speed changes to the extension.
 
 | Check | Result | Evidence boundary |
 | --- | --- | --- |
 | Decision/controller/provider tests | 24 passed | Local tests, mocked responses, includes late skip, bounded retry and cleanup |
 | Probe extension E2E | 49 passed | Actual MV3 extension; synthetic YouTube DOM, native media, mocked Jev |
-| Installation/activation E2E | 20 passed | Page opened before installing; actual options UI, mocked Jev |
+| Installation/activation/reload E2E | 27 passed | Page opened before installing; actual reload and options UI, mocked Jev; connection-error simulation |
 | Real TypeSafe Jev regression | 17/17 passed after repair; 9/17 before | Real API, synthetic labelled inputs; unchanged 0.9 threshold |
 | Real TypeSafe Jev additional cases | 18/20 passed | Additional synthetic inputs not used to select prompts; limitations below |
-| Extension with real TypeSafe Jev | 13 checks passed, 7 real API calls | Actual extension and API; synthetic DOM, generated H.264/AAC MP4 |
+| Extension with real TypeSafe Jev | 13 checks passed, 7 real API calls on 0.1.2 | Prior real-API run; synthetic DOM, generated H.264/AAC MP4; not rerun for the connection repair |
 | Existing X extension E2E | 47 passed in initial baseline | Existing offline fixtures; X runtime code unchanged by this repair |
 | Main extension typecheck/build | Passed | WXT production build |
 | Live YouTube advertisements | Not tested by the agent | Browser connection still unavailable; manual retest of updated extension needed |
@@ -40,7 +42,15 @@ The observed improvement was 6.8× including scan and real API latency. The main
 
 An earlier attempt with a silent WAV fixture accepted 16× but stalled in Chromium (readyState=2). The MP4 test passed. The controller now restores its previous speed if the accelerated ad remains beyond its deadline, instead of leaving 16× applied indefinitely. Restoration failure is reported and not allowed to crash the controller. The WAV failure is retained locally as `reports/youtube-probe-real-jev-wav-stall.json`.
 
-The fully mocked native-media regression also passed (6,471 ms baseline versus 708 ms accelerated); that separate result measures no real API latency.
+The fully mocked native-media regression also passed (6,471 ms baseline versus 714 ms accelerated on 0.1.3); that separate result measures no real API latency.
+
+## Connection recovery in 0.1.3
+
+The automated installation test reproduced a disconnected tab after reloading the extension: the saved enabled configuration survived, but the old implementation never reconnected the existing page. This is a demonstrated route to the state in the user's export, not proof of the exact sequence in their browser. Chrome documents [unpacked reloads as extension updates](https://developer.chrome.com/docs/extensions/reference/api/runtime#unpacked-extension-behavior).
+
+The repaired worker reconnects existing YouTube tabs from saved settings on startup; opening options also retries the connection. Invalidated content scripts stop their observers/timers and restore their changes. Options show the loaded version, report **Sin conexión a YouTube** rather than **Filtro activo** when all tabs are disconnected, and preserve a redacted injection error until reconnection. Tab diagnostics include the responding script's version.
+
+Seven added checks cover a real extension reload with options closed, reconnection without page navigation or a manual Connect click, one active script, resumed filtering of new content, preserved key/configuration, matching versions, and actionable disconnected/error states. Together with the existing checks, the suite has 27 passing assertions. No additional real API calls were needed for this lifecycle repair. Tracked in `CLIENTES-vkei`; the user still needs to load 0.1.3 and confirm a connected tab before evaluating live ad behavior.
 
 ## Skip transition repair in 0.1.2
 

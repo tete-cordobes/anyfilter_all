@@ -20,6 +20,8 @@ Version 0.1.2 distinguishes a ready skip control from a hidden/disabled/countdow
 
 If no skip button appears, there is no control to click. In the activated configuration, the intended action is then 16× until the ad ends. Missing skip UI does not mean the ad went undetected. Check whether the main video starts sooner, or whether a countdown/wait remains despite faster playback; the latter outcome is not established by the controlled tests. YouTube supports both [skippable and non-skippable ad formats](https://support.google.com/youtube/answer/2467968).
 
+Version 0.1.3 reconnects already-open YouTube tabs when an enabled extension starts again after a reload/update, and when its options are opened. Saved settings and credentials are reused. An invalidated content script stops its observers/timers and restores its changes; repeated injection remains idempotent. The options display the loaded version and put **Sin conexión a YouTube** above the configuration when no YouTube tab responds. Injection failures remain visible in diagnostics until the tab reconnects.
+
 ## Install for a manual real-site test
 
 1. Open `chrome://extensions`, enable Developer mode and choose **Load unpacked**.
@@ -29,7 +31,7 @@ If no skip button appears, there is no control to click. In the activated config
 5. Existing YouTube tabs are connected without reloading. The status panel shows connected tabs, active/observation/disabled state, unsupported pages, recent activity and provider errors. **Conectar pestañas de YouTube** can retry a disconnected tab. Open YouTube in the same Chrome profile.
 6. **Ajustes del filtro** contains the custom rule, observation-only mode, individual controls and experimental seeking. Save there to apply those choices. Test a normal video, a skippable ad and a non-skippable ad; export observations from the options page.
 
-When updating an already loaded unpacked extension to 0.1.2, click its reload button in `chrome://extensions`, reload YouTube once to discard the old content script, then reopen the options. Existing saved credentials are preserved. The `scripting` permission is used only to connect already-open `www.youtube.com` tabs; provider evaluation still uses Jev, with no ChatGPT dependency. The status panel now reports whether a detected ad has a ready, hidden, disabled, countdown or missing skip control, and records click attempt numbers without exporting page text.
+When updating an already loaded unpacked extension to 0.1.3, click its reload button in `chrome://extensions`, reload YouTube once to discard content scripts from older versions, then reopen the options. Check that they show **Versión 0.1.3** and that all YouTube tabs are connected. If the version remains 0.1.1/0.1.2, Chrome is still using an older loaded package; update the files in that package's directory. Reloading the same extension preserves its saved credentials. The `scripting` permission is used only to connect already-open `www.youtube.com` tabs; provider evaluation still uses Jev, with no ChatGPT dependency. The status panel reports whether a detected ad has a ready, hidden, disabled, countdown or missing skip control, and records click attempt numbers without exporting page text.
 
 The API key is stored in this experiment's trusted extension storage and sent only to the selected provider for authentication. Title, channel and advertising label are sent for evaluation; player requests also include two ad-UI flags. Feed cards do not send unrelated player flags. No audio, images, video stream, cookies or account tokens are sent. Reports contain probabilities, timings and action outcomes, not the API key or page text. Session reports are bounded to 200 events and disappear when the browser closes.
 
@@ -53,7 +55,7 @@ pnpm e2e
 
 The existing X E2E remains a separate regression gate. Both runners select the full Chromium browser, because the default headless-shell binary does not load these extensions.
 
-`e2e:youtube:setup` opens a synthetic YouTube page **before installing** the extension, then installs the real package and uses its UI to check onboarding, missing/rejected keys, rate limits, activation, connecting the existing tab without navigation, idempotent injection, mode changes, restricted credential access and redacted diagnostics. Every external request is intercepted; provider responses are mocked. It does not access the user's Chrome profile or test live YouTube.
+`e2e:youtube:setup` opens a synthetic YouTube page **before installing** the extension, then installs the real package and uses its UI to check onboarding, missing/rejected keys, rate limits, activation, connecting the existing tab without navigation, idempotent injection, mode changes, restricted credential access and redacted diagnostics. It reloads the package with the options closed and verifies automatic reconnection, continued filtering, cleanup, preserved credentials and loaded-version reporting. A simulated denied injection checks that the UI and export retain a useful connection error. Every external request is intercepted; provider responses are mocked. It does not access the user's Chrome profile or test live YouTube.
 
 ## Real Jev evaluation
 

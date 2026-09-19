@@ -12,13 +12,20 @@ export async function start() {
   const hidden = new Set();
   const restored = new Set();
   let route = location.href;
-  let scheduled = false;
-  const report = (event) => { void chrome.runtime.sendMessage({ type: 'probe-report', event }).catch(() => {}); };
+  let scheduled = 0;
+  let interval;
+  let stopped = false;
+  const report = (event) => {
+    try { void chrome.runtime.sendMessage({ type: 'probe-report', event }).catch(() => {}); }
+    catch { /* The extension was reloaded; this old context can no longer report. */ }
+  };
   const classify = (state) => chrome.runtime.sendMessage({ type: 'probe-classify', state });
   const player = new AdController({ read: readPlayer, execute: executePlayerAction, classify, report });
   const style = document.createElement('style');
   style.textContent = '.' + HIDDEN + ' { display: none !important; }';
   document.head.append(style);
+  // A previous extension context may have disappeared while cards were hidden.
+  for (const node of document.querySelectorAll('.' + HIDDEN)) node.classList.remove(HIDDEN);
 
   function restoreAll(remember) {
     for (const node of hidden) {
@@ -58,7 +65,9 @@ export async function start() {
   }
 
   function scan() {
-    scheduled = false;
+    scheduled = 0;
+    if (stopped) return;
+    if (!chrome.runtime?.id) { stop(); return; }
     if (route !== location.href) { route = location.href; invalidate(); }
     if (!settings.enabled) return;
     if (location.pathname === '/watch') player.tick(settings);
@@ -81,14 +90,28 @@ export async function start() {
     }
   }
 
-  function schedule() { if (!scheduled) { scheduled = true; setTimeout(scan, 100); } }
+  function schedule() { if (!stopped && !scheduled) scheduled = setTimeout(scan, 100); }
+  function navigate() { invalidate(); route = location.href; schedule(); }
+  function stop() {
+    if (stopped) return;
+    stopped = true;
+    clearInterval(interval);
+    clearTimeout(scheduled);
+    observer.disconnect();
+    document.removeEventListener('yt-navigate-finish', navigate);
+    window.removeEventListener('popstate', schedule);
+    window.removeEventListener('scroll', schedule);
+    try { chrome.runtime.onMessage.removeListener(onMessage); } catch { /* Invalidated context. */ }
+    invalidate();
+    style.remove();
+  }
   const observer = new MutationObserver(schedule);
   observer.observe(document.body, { childList: true, subtree: true, characterData: true,
     attributes: true, attributeFilter: ['class', 'href', 'src', 'hidden', 'aria-hidden', 'disabled', 'aria-disabled'] });
-  chrome.runtime.onMessage.addListener((message, _sender, respond) => {
+  function onMessage(message, _sender, respond) {
     if (message?.type === 'probe-ping') {
       const snapshot = readPlayer();
-      respond({ ok: true, enabled: settings.enabled, mode: settings.mode,
+      respond({ ok: true, version: chrome.runtime.getManifest().version, enabled: settings.enabled, mode: settings.mode,
         supported: filteredPage(), cards: cardNodes().length,
         player: !!snapshot, adShowing: snapshot?.state.adShowing === true,
         skipAvailable: snapshot?.skipAvailable === true, skipState: snapshot?.skipState ?? 'missing',
@@ -103,11 +126,12 @@ export async function start() {
       restoreAll(true);
       schedule();
     }
-  });
-  document.addEventListener('yt-navigate-finish', () => { invalidate(); route = location.href; schedule(); });
+  }
+  chrome.runtime.onMessage.addListener(onMessage);
+  document.addEventListener('yt-navigate-finish', navigate);
   window.addEventListener('popstate', schedule);
   window.addEventListener('scroll', schedule, { passive: true });
-  setInterval(scan, 250);
+  interval = setInterval(scan, 250);
   report({ surface: 'connection', outcome: 'page-connected' });
   scan();
 }

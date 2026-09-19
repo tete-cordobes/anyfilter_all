@@ -46,7 +46,7 @@ try {
   const cdp = await context.browser().newBrowserCDPSession();
   const { id } = await cdp.send('Extensions.loadUnpacked', { path: extension });
   await until(() => context.pages().some((p) => p.url() === 'chrome-extension://' + id + '/options.html'));
-  const options = context.pages().find((p) => p.url() === 'chrome-extension://' + id + '/options.html');
+  let options = context.pages().find((p) => p.url() === 'chrome-extension://' + id + '/options.html');
   await options.waitForFunction(() => document.querySelector('#health-state')?.textContent.includes('Sin configurar'));
   check('installation automatically opens the Jev configuration screen', !!options);
   await options.waitForFunction(() => document.querySelector('#health-youtube').textContent.includes('0/1'));
@@ -84,7 +84,7 @@ try {
   await options.locator('#connect').click();
   await page.waitForTimeout(400);
   check('reconnecting an existing page does not duplicate evaluations', calls.length === before);
-  const [worker] = context.serviceWorkers();
+  let [worker] = context.serviceWorkers();
   const tabId = await worker.evaluate(async () => (await chrome.tabs.query({ url: 'https://www.youtube.com/*' }))[0].id);
   await worker.evaluate(async (tabId) => { await chrome.scripting.executeScript({ target: { tabId }, files: ['loader.js'] }); }, tabId);
   await page.waitForTimeout(300);
@@ -97,6 +97,57 @@ try {
       diagnostics: await chrome.runtime.sendMessage({ type: 'probe-diagnostics' }) };
   } }))[0].result, tabId);
   check('page content cannot read credentials or call privileged diagnostics', denied.storageDenied && !('apiKey' in denied.publicConfig) && !denied.probe.ok && !denied.diagnostics.ok);
+  await options.close();
+  await cdp.send('Extensions.loadUnpacked', { path: extension });
+  await until(() => context.serviceWorkers().some((w) => w !== worker));
+  worker = context.serviceWorkers().find((w) => w !== worker);
+  await until(() => worker.evaluate(async () => {
+    try {
+      const [tab] = await chrome.tabs.query({ url: 'https://www.youtube.com/*' });
+      return (await chrome.tabs.sendMessage(tab.id, { type: 'probe-ping' })).ok;
+    } catch { return false; }
+  }));
+  check('reloading an enabled extension reconnects the existing tab without options, manual connect or navigation', await page.evaluate(() => window.navigationToken === 'preserve-existing-page'));
+  await page.waitForTimeout(500);
+  check('reload leaves one active content script and preserves filtering', await page.evaluate(() =>
+    document.querySelector('#ad').classList.contains('anyfilter-youtube-probe-hidden') &&
+    [...document.querySelectorAll('style')].filter((style) => style.textContent.includes('anyfilter-youtube-probe-hidden')).length === 1));
+  await page.evaluate(() => {
+    document.querySelector('#ad a').textContent = 'New advertising creative after extension reload';
+    document.querySelector('#ad').classList.remove('anyfilter-youtube-probe-hidden');
+  });
+  await page.waitForFunction(() => document.querySelector('#ad').classList.contains('anyfilter-youtube-probe-hidden'));
+  check('the reconnected tab evaluates and filters new content', calls.some((call) => call.state.title === 'New advertising creative after extension reload'));
+  options = await context.newPage();
+  await options.goto('chrome-extension://' + id + '/options.html');
+  await options.waitForFunction(() => document.querySelector('#health-youtube').textContent.includes('1/1'));
+  check('reload preserves the saved key and configuration', await options.evaluate(async () => {
+    const { settings } = await chrome.storage.local.get('settings');
+    return settings.apiKey === 'offline-onboarding-key-not-real' && settings.enabled && settings.accelerateAds;
+  }));
+  check('options and the connected tab identify the loaded version', await options.evaluate(async () => {
+    const health = await chrome.runtime.sendMessage({ type: 'probe-diagnostics' });
+    const version = chrome.runtime.getManifest().version;
+    return document.querySelector('#version').textContent.includes(version) && health.tabs.every((tab) => tab.version === version);
+  }));
+  await worker.evaluate(() => {
+    globalThis.originalSendMessage = chrome.tabs.sendMessage;
+    globalThis.originalExecuteScript = chrome.scripting.executeScript;
+    chrome.tabs.sendMessage = async () => { throw new Error('Fixture: disconnected tab'); };
+    chrome.scripting.executeScript = async () => { throw new Error('Fixture: withheld site access'); };
+  });
+  await options.locator('#connect').click();
+  await options.waitForFunction(() => document.querySelector('#health-state').textContent.includes('Sin conexión'));
+  check('enabled settings are not shown as an active filter when YouTube is disconnected', !(await options.locator('#health-state').textContent()).includes('Filtro activo'));
+  check('failed injection has an actionable explanation and a redacted diagnostic', await options.evaluate(() =>
+    document.querySelector('#health-error').textContent.includes('acceso de AnyFilter') &&
+    JSON.parse(document.querySelector('#events').textContent).tabs[0].connectionError === 'injection-failed'));
+  await worker.evaluate(() => {
+    chrome.tabs.sendMessage = globalThis.originalSendMessage;
+    chrome.scripting.executeScript = globalThis.originalExecuteScript;
+  });
+  await options.locator('#connect').click();
+  await options.waitForFunction(() => document.querySelector('#health-state').textContent.includes('Filtro activo'));
   await options.getByText('Ajustes del filtro', { exact: true }).click();
   await options.locator('#mode').selectOption('observe');
   await options.getByRole('button', { name: 'Guardar configuración' }).click();

@@ -8,6 +8,7 @@ const lanes = { card: [], player: [] };
 const busy = { card: false, player: false };
 const cache = new Map();
 const pending = new Map();
+const connectionFailures = new Map();
 let reportChain = Promise.resolve();
 
 const ready = (async () => {
@@ -85,11 +86,20 @@ async function pageStatus(tab, connect) {
         state = await ping().catch(() => null);
       }
     }
+    if (state?.ok) connectionFailures.delete(tab.id);
+    else if (connect) connectionFailures.set(tab.id, 'content-not-responding');
     return { tabId: tab.id, connected: state?.ok === true,
+      ...(!state?.ok ? { connectionError: connectionFailures.get(tab.id) ?? 'content-not-responding' } : {}),
       ...(state?.ok ? { enabled: state.enabled, mode: state.mode, supported: state.supported,
+        version: state.version,
         cards: state.cards, player: state.player, adShowing: state.adShowing, adUiVisible: state.adUiVisible,
         skipAvailable: state.skipAvailable, skipState: state.skipState, skipCandidates: state.skipCandidates } : {}) };
-  } catch { return { tabId: tab.id, connected: false }; }
+  } catch {
+    connectionFailures.set(tab.id, 'injection-failed');
+    return { tabId: tab.id, connected: false, connectionError: 'injection-failed' };
+  } finally {
+    if (connectionFailures.size > 100) connectionFailures.delete(connectionFailures.keys().next().value);
+  }
 }
 
 async function diagnostics(connect = false) {
@@ -116,7 +126,16 @@ chrome.action.onClicked.addListener(() => { void chrome.runtime.openOptionsPage(
 chrome.runtime.onInstalled.addListener(({ reason }) => {
   if (reason === 'install') void chrome.runtime.openOptionsPage();
 });
-void ready.then(updateBadge);
+// Reloading/updating the extension invalidates scripts in already-open tabs.
+// Restore their connection from saved settings, without navigating the page.
+void ready.then(async () => {
+  await updateBadge();
+  if (!current.enabled) return;
+  const health = await diagnostics(true);
+  for (const tab of health.tabs.filter((tab) => !tab.connected)) {
+    await saveReport({ surface: 'connection', outcome: 'connection-error', error: tab.connectionError }, tab.tabId);
+  }
+}).catch(() => {});
 
 chrome.runtime.onMessage.addListener((message, sender, respond) => {
   if (!message || typeof message !== 'object') return false;
