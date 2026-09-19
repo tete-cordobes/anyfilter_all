@@ -280,6 +280,56 @@ try {
   await page.waitForFunction((before) => fixture.clicks === before + 2 && fixture.source === 'content', beforeRetry);
   check('one delayed retry recovers when the first visible skip click is ignored', await page.evaluate(() => fixture.clicks) === beforeRetry + 2);
 
+  // Reconstruct only the badge classes observed in the user's live 0.1.4 export.
+  // The page, media and Jev response are still controlled fixtures.
+  await page.waitForFunction(() => document.querySelector('video').playbackRate === 1.25);
+  await page.evaluate(() => {
+    document.querySelector('.ytp-ad-text').style.display = 'none';
+    const badge = document.createElement('span'); badge.id = 'clean-player-badge';
+    badge.className = 'ytp-ad-badge--clean-player ytp-ad-badge--stark-clean-player';
+    badge.innerHTML = '<div class="ad-simple-attributed-string ytp-ad-badge__text--clean-player">Patrocinado</div>';
+    document.querySelector('#movie_player').append(badge);
+  });
+  const beforeCleanBadge = calls.filter((call) => call.state.youtubeSurface === 'player').length;
+  await page.waitForTimeout(500);
+  check('visible clean-player badge with only ad-created leaves ordinary playback untouched',
+    calls.filter((call) => call.state.youtubeSurface === 'player').length === beforeCleanBadge &&
+    await page.evaluate(() => { const v = document.querySelector('video'); return v.playbackRate === 1.25 && v.volume === 0.37 && v.currentTime === 3; }));
+  await page.evaluate(async () => {
+    document.querySelector('#clean-player-badge').hidden = true;
+    await fixture.startAd('no-skip', 'Hidden clean-player badge', 17);
+  });
+  await page.waitForTimeout(500);
+  check('hidden clean-player badge cannot authorize an action even with ad-showing',
+    calls.filter((call) => call.state.youtubeSurface === 'player').length === beforeCleanBadge &&
+    await page.evaluate(() => document.querySelector('video').playbackRate === 1.25));
+  await page.evaluate(() => { document.querySelector('#clean-player-badge').hidden = false; });
+  await page.waitForFunction(() => document.querySelector('video').playbackRate === 16, null, { timeout: 3000 });
+  check('visible clean-player badge identifies an ad before a skip button is available',
+    await page.evaluate(() => document.querySelector('video').playbackRate === 16));
+  const cleanHealth = await options.evaluate(() => chrome.runtime.sendMessage({ type: 'probe-diagnostics' }));
+  check('clean-player detection supplies its label to Jev and reports no ready skip',
+    calls.some((call) => call.state.youtubeSurface === 'player' && call.state.title === 'Hidden clean-player badge' &&
+      call.state.visibleAdvertisingLabel === 'Patrocinado') &&
+    cleanHealth.tabs[0].adUiVisible && !cleanHealth.tabs[0].skipAvailable &&
+    cleanHealth.tabs[0].playerDiagnostics.signals.some((signal) => signal.visible && signal.knownAdUi &&
+      signal.classes.includes('ytp-ad-badge--clean-player')));
+  const beforeCleanSkip = await page.evaluate(() => fixture.clicks);
+  await page.evaluate(() => { document.querySelector('.ytp-skip-ad-button').hidden = false; });
+  await page.waitForFunction((before) => fixture.clicks === before + 1 && fixture.source === 'content' &&
+    document.querySelector('video').playbackRate === 1.25, beforeCleanSkip);
+  check('clean-player ad switches from 16x to a late skip and restores content speed',
+    calls.filter((call) => call.state.youtubeSurface === 'player').length === beforeCleanBadge + 1);
+
+  offset = (await events()).length;
+  await page.evaluate(() => fixture.startAd('no-skip', 'MODEL_KEEP clean-player allowed ad', 17));
+  await waitEvent('evaluated', offset); await page.waitForTimeout(400);
+  check('clean-player badge still requires a positive Jev decision', await page.evaluate((expectedClicks) =>
+    fixture.source === 'ad' && fixture.clicks === expectedClicks && document.querySelector('video').playbackRate === 1.25, beforeCleanSkip + 1) &&
+    !(await events()).slice(offset).some((event) => event.outcome === 'action-attempted'));
+  await page.evaluate(() => { fixture.endAd(); document.querySelector('#clean-player-badge').remove(); document.querySelector('.ytp-ad-text').style.removeProperty('display'); });
+  await page.waitForTimeout(400);
+
   const beforeUnknownLayout = calls.filter((call) => call.state.youtubeSurface === 'player').length;
   await page.bringToFront();
   await page.evaluate(async () => {

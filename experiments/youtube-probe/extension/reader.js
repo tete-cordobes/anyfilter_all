@@ -1,6 +1,7 @@
 const CARD = 'ytd-rich-item-renderer,ytd-video-renderer,ytd-compact-video-renderer,yt-lockup-view-model,ytd-ad-slot-renderer,ytd-in-feed-ad-layout-renderer';
 const SKIP = '.ytp-skip-ad-button,.ytp-ad-skip-button,.ytp-ad-skip-button-modern';
-const AD_UI = '.ytp-ad-text,.ytp-ad-simple-ad-badge,.ytp-ad-badge,.ytp-ad-preview-container,.ytp-ad-player-overlay-instream-info';
+// The observed clean-player badge has no legacy badge class.
+const AD_UI = '.ytp-ad-text,.ytp-ad-simple-ad-badge,.ytp-ad-badge,.ytp-ad-badge--clean-player,.ytp-ad-preview-container,.ytp-ad-player-overlay-instream-info';
 const text = (node) => (node?.textContent ?? '').trim().slice(0, 1500);
 const readySkipLabel = /^(?:skip(?:\s+ads?)?|saltar(?:\s+(?:anuncios?|publicidad))?|omitir(?:\s+(?:anuncios?|publicidad))?)(?:\s*[»›>→])?$/i;
 const controlLabel = (node) => (node.getAttribute('aria-label') || node.innerText || node.textContent || '').trim().replace(/\s+/g, ' ');
