@@ -10,7 +10,10 @@
     "build": "pnpm typecheck && wxt build",
     "zip": "pnpm typecheck && wxt zip",
     "postinstall": "wxt prepare",
-    "e2e": "node scripts/e2e-offline.mjs"
+    "e2e": "node scripts/e2e-offline.mjs",
+    "test:youtube": "node --test experiments/youtube-probe/tests/policy.test.mjs",
+    "e2e:youtube": "node experiments/youtube-probe/tests/e2e-offline.mjs",
+    "eval:youtube": "node experiments/youtube-probe/evaluate.mjs"
   },
   "dependencies": {
     "react": "^19.1.0",

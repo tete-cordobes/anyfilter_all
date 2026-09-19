@@ -1,0 +1,51 @@
+<!doctype html><html><head><meta charset="utf-8"><title>Offline YouTube fixture — not live YouTube</title>
+<style>
+body{font-family:Arial;margin:20px}#movie_player{display:block;width:640px;height:220px;background:#eee;padding:16px}video{width:160px;height:80px}ytd-rich-item-renderer,ytd-video-renderer,yt-lockup-view-model,ytd-ad-slot-renderer{display:block;margin:12px;padding:12px;border:1px solid #ccc;min-height:50px}button,.ytp-ad-text,.ytp-ad-title,.ytp-ad-button-text{display:inline-block;padding:5px}.ytp-ad-text,.ytp-ad-title,.ytp-ad-button-text,.ytp-skip-ad-button{display:none}.ad-showing .ytp-ad-text,.ad-showing .ytp-ad-title,.ad-showing .ytp-ad-button-text,.ad-showing .ytp-skip-ad-button{display:inline-block}
+</style></head><body>
+<h1>Controlled fixture, all provider requests mocked</h1>
+<div id="movie_player" class="html5-video-player"><video class="html5-main-video" preload="auto" src="/fixture-main.wav"></video>
+<span class="ytp-ad-text">Anuncio</span><span class="ytp-ad-title">Buy Example Shoes</span><span class="ytp-ad-button-text">Example Shoes</span>
+<button class="ytp-skip-ad-button">Saltar anuncios</button><button class="ytp-ad-skip-button" style="display:none">Hidden decoy</button></div>
+<ytd-rich-item-renderer id="sponsored"><yt-lockup-view-model><h3><a href="/watch?v=sponsored">SPONSORED Buy Example Shoes</a></h3><ytd-channel-name>Example Shoes</ytd-channel-name><span class="badge-style-type-ad">Sponsored</span></yt-lockup-view-model></ytd-rich-item-renderer>
+<ytd-video-renderer id="organic"><h3><a id="video-title" href="/watch?v=organic">How online ads work: a technical explanation</a></h3><ytd-channel-name>University</ytd-channel-name></ytd-video-renderer>
+<yt-lockup-view-model id="crypto"><h3><a href="/watch?v=crypto">CRYPTO Buy this token, guaranteed 100x</a></h3><a href="/@TokenSeller">TokenSeller</a></yt-lockup-view-model>
+<ytd-rich-item-renderer id="lazy"></ytd-rich-item-renderer>
+<script>
+window.fixture = { clicks: 0, decoyClicks: 0, seeks: [], rejectClick: false, rejectSeek: false, rejectSpeed: false, source: 'content', serial: 0, rates: [] };
+const video = document.querySelector('video');
+video.volume = 0.37; video.defaultPlaybackRate = 1.25; video.playbackRate = 1.25;
+video.addEventListener('loadedmetadata', () => { if (fixture.source === 'content') video.currentTime = 3; });
+video.addEventListener('seeked', () => {
+ if (fixture.source !== 'content' && video.currentTime >= video.duration - 0.1) {
+  fixture.seeks.push(video.currentTime); if (!fixture.rejectSeek) fixture.endAd();
+ }
+});
+video.addEventListener('ratechange', () => {
+ fixture.rates.push(video.playbackRate);
+ if (fixture.rejectSpeed && video.playbackRate === 16) video.playbackRate = 1;
+});
+fixture.endAd = () => { document.querySelector('#movie_player').classList.remove('ad-showing'); fixture.source = 'content'; video.src = '/fixture-main.wav'; };
+fixture.startAd = async (kind = 'skip', title = 'Buy Example Shoes', seconds = 2) => {
+ fixture.source = 'ad'; video.src = '/fixture-ad.wav?instance=' + (++fixture.serial) + '&seconds=' + seconds;
+ await new Promise((resolve) => video.addEventListener('canplaythrough', resolve, { once: true }));
+document.querySelector('.ytp-ad-title').textContent = title;
+ document.querySelector('.ytp-skip-ad-button').hidden = kind !== 'skip';
+ document.querySelector('#movie_player').classList.add('ad-showing');
+};
+document.querySelector('.ytp-skip-ad-button').addEventListener('click', () => { fixture.clicks += 1; if (!fixture.rejectClick) fixture.endAd(); });
+document.querySelector('.ytp-ad-skip-button').addEventListener('click', () => { fixture.decoyClicks += 1; });
+fixture.measurePlayback = async (title, seconds) => {
+ await fixture.startAd('no-skip', title, seconds);
+ const initialRate = video.playbackRate;
+ const wasMuted = video.muted;
+ video.muted = true;
+ fixture.rates = [];
+ const start = performance.now();
+ const ended = new Promise((resolve) => video.addEventListener('ended', resolve, { once: true }));
+ await video.play(); await ended;
+ const result = { wallMs: Math.round(performance.now() - start), mediaSeconds: seconds,
+   initialRate, rates: [...fixture.rates] };
+ fixture.endAd(); video.muted = wasMuted;
+ return result;
+};
+</script></body></html>

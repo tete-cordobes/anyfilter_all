@@ -42,6 +42,7 @@ async function waitFor(fn, label, timeoutMs = 8000) {
 
 const context = await chromium.launchPersistentContext(mkdtempSync(path.join(tmpdir(), 'anyfilter-')), {
   headless: true,
+  channel: 'chromium',
   ...(EXECUTABLE ? { executablePath: EXECUTABLE } : {}),
   args: [`--disable-extensions-except=${EXTENSION_DIR}`, `--load-extension=${EXTENSION_DIR}`],
 });

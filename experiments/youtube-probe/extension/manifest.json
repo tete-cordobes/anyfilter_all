@@ -1,0 +1,13 @@
+{
+  "manifest_version": 3,
+  "name": "AnyFilter — YouTube experiment",
+  "version": "0.1.0",
+  "description": "Experimental Jev evaluation of YouTube cards and player ads. Reports attempts separately from observed transitions.",
+  "permissions": ["storage"],
+  "host_permissions": ["https://www.youtube.com/*", "https://api.typesafe.ai/*", "https://ai-gateway.vercel.sh/*"],
+  "background": { "service_worker": "background.js", "type": "module" },
+  "action": { "default_title": "YouTube experiment settings and results" },
+  "options_page": "options.html",
+  "content_scripts": [{ "matches": ["https://www.youtube.com/*"], "js": ["loader.js"] }],
+  "web_accessible_resources": [{ "resources": ["content.js", "reader.js", "controller.js", "shared.js"], "matches": ["https://www.youtube.com/*"] }]
+}

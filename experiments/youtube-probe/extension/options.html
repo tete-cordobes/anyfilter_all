@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="es"><head><meta charset="utf-8"><title>AnyFilter · Prueba YouTube</title>
+<style>
+body{font:16px system-ui;max-width:820px;margin:40px auto;padding:0 20px;color:#17212b;background:#f7f8fa}h1{font-size:26px}form,section{background:white;padding:24px;border:1px solid #ddd;border-radius:12px;margin:20px 0}label{display:block;margin:16px 0}input[type=password],select,textarea{display:block;box-sizing:border-box;width:100%;padding:10px;margin-top:6px;font:inherit}button{padding:10px 16px;font:inherit;cursor:pointer;margin:5px 8px 5px 0}pre{white-space:pre-wrap;word-break:break-word;font-size:12px;max-height:450px;overflow:auto}.note{color:#4a5360;line-height:1.5}#status{min-height:24px}input[type=checkbox]{margin-right:8px}
+</style></head><body>
+<h1>AnyFilter · Prueba de YouTube con Jev</h1>
+<p class="note">Experimento independiente. Evalúa tarjetas y anuncios del reproductor. Un intento de salto no demuestra que YouTube lo haya aceptado. La transición observada después del intento también puede coincidir con el final natural del anuncio.</p>
+<form id="settings">
+<label>Proveedor<select id="provider"><option value="typesafe">TypeSafe directo</option><option value="vercel">Vercel AI Gateway</option></select></label>
+<label>API key<input id="key" type="password" autocomplete="off" placeholder="Se guarda en el almacenamiento local de esta extensión"></label>
+<p class="note">La clave se envía únicamente al proveedor elegido para autenticar. El texto y las señales visibles se envían a ese proveedor para evaluar. Los resultados locales no incluyen la clave ni el texto de las páginas.</p>
+<label>Qué ocultar<textarea id="rule" rows="3" maxlength="1500"></textarea></label>
+<label>Modo<select id="mode"><option value="observe">Observar decisiones sin modificar YouTube</option><option value="act">Aplicar filtro y probar salto de anuncios</option></select></label>
+<label><input id="enabled" type="checkbox">Activar la prueba</label>
+<label><input id="filterCards" type="checkbox">Evaluar tarjetas</label>
+<label><input id="skipAds" type="checkbox">Evaluar anuncios del reproductor</label>
+<label><input id="accelerateAds" type="checkbox">Probar anuncios sin botón a 16× y restaurar la velocidad al terminar</label>
+<p class="note">La aceleración se intenta una vez por anuncio. Si YouTube cambia o rechaza la velocidad, se registra el resultado. No se fuerza repetidamente ni se cuenta como un anuncio eliminado.</p>
+<label><input id="seekAds" type="checkbox">Probar avance al final en anuncios sin botón de salto (experimental)</label>
+<p class="note">El avance se intenta solo con señales publicitarias visibles y un segmento finito y desplazable de hasta 180 segundos. Puede fallar o ser rechazado por YouTube; todavía no está validado en anuncios reales. Desactivarlo mantiene únicamente la prueba del botón de salto.</p>
+<button type="submit">Guardar configuración</button><span id="status" role="status"></span>
+</form>
+<section><h2>Resultados de esta sesión</h2><p class="note">Los eventos distinguen evaluación, intento, anuncio que sigue reproduciéndose y transición posterior. Al cerrar el navegador se borran.</p>
+<button id="refresh">Actualizar</button><button id="restore">Recuperar tarjetas</button><button id="export">Exportar resultados JSON</button><button id="clear">Borrar resultados</button>
+<pre id="events" aria-live="polite"></pre></section>
+<script type="module" src="options.js"></script></body></html>

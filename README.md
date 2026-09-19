@@ -45,6 +45,10 @@ src/entrypoints/     content, background, sidepanel
 
 To support another site, implement `domain/timeline-view.ts` for it and add its URL to the content script.
 
+## YouTube experiment
+
+An isolated [YouTube + Jev experiment](experiments/youtube-probe/README.md) exercises card filtering and player-ad actions, including optional 16× playback. Its offline tests are not evidence that real YouTube ads are blocked.
+
 ## License
 
 MIT
